@@ -63,6 +63,8 @@ export const createSessionStream = (
         send({ type: 'appendText', blockId: data.blockId, delta: data.delta });
       } else if (data.type === 'researchComplete') {
         send({ type: 'researchComplete' });
+      } else if (data.type === 'answerEnd') {
+        send({ type: 'answerEnd' });
       }
     } else if (event === 'end') {
       send({ type: 'messageEnd' });

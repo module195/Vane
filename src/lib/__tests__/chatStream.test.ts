@@ -95,6 +95,8 @@ describe('answer stream routes', () => {
       'block',
       'appendText',
       'appendText',
+      // Writer done; no sources here, so no suggestions follow.
+      'answerEnd',
       'messageEnd',
     ]);
     expect(live.filter((m) => m.delta).map((m) => m.delta)).toEqual([
@@ -122,6 +124,7 @@ describe('answer stream routes', () => {
         type: 'block',
         block: expect.objectContaining({ type: 'text', data: 'Olá mundo' }),
       },
+      { type: 'answerEnd' },
       { type: 'messageEnd' },
     ]);
   });

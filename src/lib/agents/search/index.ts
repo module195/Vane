@@ -10,7 +10,12 @@ import { messages } from '@/lib/db/schema';
 import { and, eq, gt } from 'drizzle-orm';
 import { Message, TextBlock } from '@/lib/types';
 import { getTokenCount } from '@/lib/utils/splitText';
-import { runWithAbortSignal, throwIfScopeAborted } from '@/lib/abortScope';
+import {
+  isScopeAborted,
+  runWithAbortSignal,
+  throwIfScopeAborted,
+} from '@/lib/abortScope';
+import generateSuggestions from '@/lib/agents/suggestions';
 
 class SearchAgent {
   /* Runs under the session's abort signal: LLM calls, searches and page
@@ -259,8 +264,22 @@ class SearchAgent {
 
     throwIfScopeAborted();
 
-    session.emit('end', {});
+    // The answer is done: the client stops loading now, while the
+    // follow-up suggestions are generated on the same stream.
+    session.emit('data', { type: 'answerEnd' });
+    await this.saveCompleted(session, input);
 
+    if (await this.emitSuggestions(session, input)) {
+      await this.saveCompleted(session, input);
+    }
+
+    session.emit('end', {});
+  }
+
+  private async saveCompleted(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ) {
     await db
       .update(messages)
       .set({
@@ -274,6 +293,50 @@ class SearchAgent {
         ),
       )
       .execute();
+  }
+
+  /* Follow-up suggestions, generated right after the writer instead of
+     by a second request the client made after messageEnd (one HTTP round
+     trip and one model-list lookup earlier). Same rule and same input as
+     before: only when the answer has sources, from the chat history plus
+     this question and answer. They need the final answer, so they cannot
+     run alongside the writer. A failure sends an empty list (no retry from
+     the client); returns whether a suggestion block was emitted. */
+  private async emitSuggestions(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ): Promise<boolean> {
+    const blocks = session.getAllBlocks();
+    const hasSources = blocks.some(
+      (b) => b.type === 'source' && b.data.length > 0,
+    );
+    if (!hasSources) return false;
+
+    const answer = blocks.find((b) => b.type === 'text')?.data || '';
+
+    let suggestions: string[] = [];
+    try {
+      suggestions = await generateSuggestions(
+        {
+          chatHistory: [
+            ...input.chatHistory,
+            { role: 'user', content: input.followUp },
+            { role: 'assistant', content: answer },
+          ],
+        },
+        input.config.llm,
+      );
+    } catch (err) {
+      if (isScopeAborted()) return false;
+      console.error('SearchAgent: failed to generate suggestions:', err);
+    }
+
+    session.emitBlock({
+      id: crypto.randomUUID(),
+      type: 'suggestion',
+      data: Array.isArray(suggestions) ? suggestions : [],
+    });
+    return true;
   }
 }
 

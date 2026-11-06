@@ -360,6 +360,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const handledMessageEndRef = useRef<Set<string>>(new Set());
   /* backendIds of answers the user stopped: no follow-up suggestions. */
   const stoppedRef = useRef<Set<string>>(new Set());
+  /* backendIds whose suggestions arrived on the stream or were requested. */
+  const suggestionsHandledRef = useRef<Set<string>>(new Set());
 
   /* Stop button: the server aborts the answer and the open stream ends
      with messageEnd, which finishes the message as usual. */
@@ -506,6 +508,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
   const getMessageHandler = (message: Message) => {
     const messageId = message.messageId;
+    /* History including this answer, set when the answer finishes. */
+    let answerHistory: [string, string][] | null = null;
 
     return async (data: any) => {
       if (data.type === 'error') {
@@ -557,89 +561,114 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         setMessageAppeared(true);
       }
 
-      if (data.type === 'messageEnd') {
+      if (data.type === 'block' && data.block.type === 'suggestion') {
+        // Sent by the server after answerEnd: no request needed.
+        suggestionsHandledRef.current.add(message.backendId);
+      }
+
+      // answerEnd (writer done; suggestions may follow on this stream) or,
+      // from a server without it, messageEnd: finish the answer once.
+      if (data.type === 'answerEnd' || data.type === 'messageEnd') {
         // Keyed by backendId (one per stream): a rewrite reuses messageId.
-        if (!claimMessageEnd(handledMessageEndRef.current, message.backendId)) {
-          return;
-        }
-
-        const currentMsg = messagesRef.current.find(
-          (msg) => msg.messageId === messageId,
-        );
-
-        const newHistory: [string, string][] = [
-          ...chatHistory.current,
-          ['human', message.query],
-          [
-            'assistant',
-            currentMsg?.responseBlocks.find((b) => b.type === 'text')?.data ||
-              '',
-          ],
-        ];
-
-        chatHistory.current = newHistory;
-
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.messageId === messageId
-              ? { ...msg, status: 'completed' as const }
-              : msg,
-          ),
-        );
-
-        setLoading(false);
-
-        const lastMsg = messagesRef.current[messagesRef.current.length - 1];
-
-        const autoMediaSearch = getAutoMediaSearch();
-
-        if (autoMediaSearch) {
-          setTimeout(() => {
-            document
-              .getElementById(`search-images-${lastMsg.messageId}`)
-              ?.click();
-
-            document
-              .getElementById(`search-videos-${lastMsg.messageId}`)
-              ?.click();
-          }, 200);
-        }
-
-        // Check if there are sources and no suggestions
-
-        const hasSourceBlocks = currentMsg?.responseBlocks.some(
-          (block) => block.type === 'source' && block.data.length > 0,
-        );
-        const hasSuggestions = currentMsg?.responseBlocks.some(
-          (block) => block.type === 'suggestion',
-        );
-
-        if (
-          hasSourceBlocks &&
-          !hasSuggestions &&
-          !stoppedRef.current.has(message.backendId)
-        ) {
-          const suggestions = await getSuggestions(newHistory);
-          const suggestionBlock: Block = {
-            id: crypto.randomBytes(7).toString('hex'),
-            type: 'suggestion',
-            data: suggestions,
-          };
-
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.messageId === messageId) {
-                return {
-                  ...msg,
-                  responseBlocks: [...msg.responseBlocks, suggestionBlock],
-                };
-              }
-              return msg;
-            }),
-          );
+        if (claimMessageEnd(handledMessageEndRef.current, message.backendId)) {
+          finishAnswer();
         }
       }
+
+      if (data.type === 'messageEnd') {
+        await requestMissingSuggestions();
+      }
     };
+
+    function finishAnswer() {
+      const currentMsg = messagesRef.current.find(
+        (msg) => msg.messageId === messageId,
+      );
+
+      const newHistory: [string, string][] = [
+        ...chatHistory.current,
+        ['human', message.query],
+        [
+          'assistant',
+          currentMsg?.responseBlocks.find((b) => b.type === 'text')?.data || '',
+        ],
+      ];
+
+      chatHistory.current = newHistory;
+      answerHistory = newHistory;
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId
+            ? { ...msg, status: 'completed' as const }
+            : msg,
+        ),
+      );
+
+      setLoading(false);
+
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+
+      const autoMediaSearch = getAutoMediaSearch();
+
+      if (autoMediaSearch) {
+        setTimeout(() => {
+          document
+            .getElementById(`search-images-${lastMsg.messageId}`)
+            ?.click();
+
+          document
+            .getElementById(`search-videos-${lastMsg.messageId}`)
+            ?.click();
+        }, 200);
+      }
+    }
+
+    /* Fallback for a stream that ended without a suggestion block (an
+       answer from before the server generated them): ask for them as
+       before, when there are sources. */
+    async function requestMissingSuggestions() {
+      if (
+        !answerHistory ||
+        suggestionsHandledRef.current.has(message.backendId) ||
+        stoppedRef.current.has(message.backendId)
+      ) {
+        return;
+      }
+      suggestionsHandledRef.current.add(message.backendId);
+
+      const currentMsg = messagesRef.current.find(
+        (msg) => msg.messageId === messageId,
+      );
+
+      const hasSourceBlocks = currentMsg?.responseBlocks.some(
+        (block) => block.type === 'source' && block.data.length > 0,
+      );
+      const hasSuggestions = currentMsg?.responseBlocks.some(
+        (block) => block.type === 'suggestion',
+      );
+
+      if (!hasSourceBlocks || hasSuggestions) return;
+
+      const suggestions = await getSuggestions(answerHistory);
+      const suggestionBlock: Block = {
+        id: crypto.randomBytes(7).toString('hex'),
+        type: 'suggestion',
+        data: suggestions,
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.messageId === messageId) {
+            return {
+              ...msg,
+              responseBlocks: [...msg.responseBlocks, suggestionBlock],
+            };
+          }
+          return msg;
+        }),
+      );
+    }
   };
 
   const sendMessage: ChatContext['sendMessage'] = async (

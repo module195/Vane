@@ -23,6 +23,8 @@ class SessionManager {
   /* Number of blocks that existed when researchComplete fired, so the
      snapshot replays it in the same place; null until it fires. */
   private researchCompleteAt: number | null = null;
+  /* The writer finished (follow-up suggestions may still be coming). */
+  private answerEnded = false;
   /* The 'end' or 'error' event, once the answer is over. */
   private terminal: { event: string; data: any } | null = null;
   private emitter = new EventEmitter();
@@ -106,6 +108,8 @@ class SessionManager {
   emit(event: string, data: any) {
     if (event === 'data' && data?.type === 'researchComplete') {
       this.researchCompleteAt = this.blocks.size;
+    } else if (event === 'data' && data?.type === 'answerEnd') {
+      this.answerEnded = true;
     } else if (event === 'end' || event === 'error') {
       this.terminal = { event, data };
       clearTimeout(this.idleTimer);
@@ -191,6 +195,9 @@ class SessionManager {
     }
     if (this.researchCompleteAt !== null && this.researchCompleteAt >= index) {
       listener('data', { type: 'researchComplete' });
+    }
+    if (this.answerEnded) {
+      listener('data', { type: 'answerEnd' });
     }
     if (this.terminal) {
       listener(this.terminal.event, this.terminal.data);
