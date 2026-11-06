@@ -24,20 +24,27 @@ class UploadStore {
     constructor(private params: UploadStoreParams) {
         this.embeddingModel = params.embeddingModel;
         this.fileIds = params.fileIds;
-        this.initializeStore()
     }
 
-    initializeStore() {
-        this.fileIds.forEach((fileId) => {
+    /* Builds a store with the chunks of every file loaded (async, cached by
+       UploadManager.getFileChunksCached). Throws for an unknown file id. */
+    static async create(params: UploadStoreParams): Promise<UploadStore> {
+        const store = new UploadStore(params);
+        await store.initializeStore();
+        return store;
+    }
+
+    async initializeStore() {
+        const perFile = await Promise.all(this.fileIds.map(async (fileId) => {
             const file = UploadManager.getFile(fileId)
 
             if (!file) {
                 throw new Error(`File with ID ${fileId} not found`);
             }
 
-            const chunks = UploadManager.getFileChunks(fileId);
+            const chunks = await UploadManager.getFileChunksCached(fileId);
 
-            this.records.push(...chunks.map((chunk) => ({
+            return chunks.map((chunk) => ({
                 embedding: chunk.embedding,
                 content: chunk.content,
                 fileId: fileId,
@@ -46,8 +53,10 @@ class UploadStore {
                     title: file.name,
                     url: `file_id://${file.id}`,
                 }
-            })))
-        })
+            }))
+        }))
+
+        this.records = perFile.flat();
     }
 
     async query(queries: string[], topK: number): Promise<Chunk[]> {
@@ -96,25 +105,21 @@ class UploadStore {
         return finalResults.slice(0, topK);
     }
 
-    static getFileData(fileIds: string[]): { fileName: string; initialContent: string }[] {
-        const filesData: { fileName: string; initialContent: string }[] = [];
-
-        fileIds.forEach((fileId) => {
+    static async getFileData(fileIds: string[]): Promise<{ fileName: string; initialContent: string }[]> {
+        return Promise.all(fileIds.map(async (fileId) => {
             const file = UploadManager.getFile(fileId)
 
             if (!file) {
                 throw new Error(`File with ID ${fileId} not found`);
             }
 
-            const chunks = UploadManager.getFileChunks(fileId);
+            const chunks = await UploadManager.getFileChunksCached(fileId);
 
-            filesData.push({
+            return {
                 fileName: file.name,
                 initialContent: chunks.slice(0, 3).map(c => c.content).join('\n---\n'),
-            })
-        })
-
-        return filesData
+            }
+        }))
     }
 }
 

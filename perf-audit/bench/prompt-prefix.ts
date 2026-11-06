@@ -15,11 +15,27 @@ const sharedPrefix = (a: string, b: string) => {
 const actionDesc = '<tool name="web_search">Search the web.</tool>';
 const maxIteration = { speed: 2, balanced: 6, quality: 25 } as const;
 
-for (const mode of ['speed', 'balanced', 'quality'] as const) {
-  const p1 = getResearcherPrompt(actionDesc, mode, 0, maxIteration[mode], []);
-  const p2 = getResearcherPrompt(actionDesc, mode, 1, maxIteration[mode], []);
-  const shared = sharedPrefix(p1, p2);
-  console.log(
-    `${mode.padEnd(8)} prompt ${p1.length} chars, shared prefix it1->it2 ${shared} chars (${((shared / p1.length) * 100).toFixed(1)}%)`,
-  );
-}
+const main = async () => {
+  for (const mode of ['speed', 'balanced', 'quality'] as const) {
+    const p1 = await getResearcherPrompt(
+      actionDesc,
+      mode,
+      0,
+      maxIteration[mode],
+      [],
+    );
+    const p2 = await getResearcherPrompt(
+      actionDesc,
+      mode,
+      1,
+      maxIteration[mode],
+      [],
+    );
+    const shared = sharedPrefix(p1, p2);
+    console.log(
+      `${mode.padEnd(8)} prompt ${p1.length} chars, shared prefix it1->it2 ${shared} chars (${((shared / p1.length) * 100).toFixed(1)}%)`,
+    );
+  }
+};
+
+main();

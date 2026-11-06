@@ -19,7 +19,7 @@ describe('prompts', () => {
     async (mode) => {
       const { getResearcherPrompt } = await import('../search/researcher');
       expect(
-        getResearcherPrompt('<tool name="x">desc</tool>', mode, 0, 6, []),
+        await getResearcherPrompt('<tool name="x">desc</tool>', mode, 0, 6, []),
       ).toMatchSnapshot();
     },
   );
@@ -29,8 +29,8 @@ describe('prompts', () => {
     async (mode) => {
       const { getResearcherPrompt } = await import('../search/researcher');
       const files: string[] = [];
-      const a = getResearcherPrompt('d', mode, 0, 6, files);
-      const b = getResearcherPrompt('d', mode, 1, 6, files);
+      const a = await getResearcherPrompt('d', mode, 0, 6, files);
+      const b = await getResearcherPrompt('d', mode, 1, 6, files);
       let i = 0;
       while (a[i] === b[i]) i++;
       // Before: the iteration counter sat in the opening lines and only

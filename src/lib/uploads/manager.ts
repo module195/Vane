@@ -24,6 +24,8 @@ type RecordedFile = {
     uploadedAt: string;
 }
 
+type FileChunk = { content: string; embedding: number[] };
+
 type FileRes = {
     fileName: string;
     fileExtension: string;
@@ -105,6 +107,65 @@ class UploadManager {
             console.log('Error getting file chunks:', err);
             return [];
         }
+    }
+
+    /* Parsed .content.json files, keyed by path and checked against mtime and
+       size on every read, so a rewritten file is parsed again. Bounded by the
+       on-disk size of the cached files; least recently used go first. */
+    private static chunksCache = new Map<string, { mtimeMs: number; size: number; chunks: FileChunk[] }>();
+    private static chunksCacheBytes = 0;
+    static chunksCacheMaxBytes = 256 * 1024 * 1024;
+
+    /* Async, cached version of getFileChunks for the search path. The
+       returned array is shared between callers and must not be mutated. */
+    static async getFileChunksCached(fileId: string): Promise<FileChunk[]> {
+        try {
+            const recordedFile = this.getFile(fileId);
+
+            if (!recordedFile) {
+                throw new Error(`File with ID ${fileId} not found`);
+            }
+
+            const contentPath = recordedFile.contentPath;
+            const stat = await fs.promises.stat(contentPath);
+            const cached = this.chunksCache.get(contentPath);
+
+            if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+                // Refresh LRU position.
+                this.chunksCache.delete(contentPath);
+                this.chunksCache.set(contentPath, cached);
+                return cached.chunks;
+            }
+
+            const chunks: FileChunk[] = JSON.parse(await fs.promises.readFile(contentPath, 'utf-8')).chunks;
+
+            this.dropCachedChunks(contentPath);
+            if (stat.size <= this.chunksCacheMaxBytes) {
+                this.chunksCache.set(contentPath, { mtimeMs: stat.mtimeMs, size: stat.size, chunks });
+                this.chunksCacheBytes += stat.size;
+                for (const [key] of this.chunksCache) {
+                    if (this.chunksCacheBytes <= this.chunksCacheMaxBytes) break;
+                    this.dropCachedChunks(key);
+                }
+            }
+
+            return chunks;
+        } catch (err) {
+            console.log('Error getting file chunks:', err);
+            return [];
+        }
+    }
+
+    private static dropCachedChunks(contentPath: string) {
+        const entry = this.chunksCache.get(contentPath);
+        if (!entry) return;
+        this.chunksCacheBytes -= entry.size;
+        this.chunksCache.delete(contentPath);
+    }
+
+    static clearChunksCache() {
+        this.chunksCache.clear();
+        this.chunksCacheBytes = 0;
     }
 
     private async extractContentAndEmbed(filePath: string, fileType: SupportedMimeType): Promise<string> {

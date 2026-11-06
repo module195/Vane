@@ -19,7 +19,7 @@ vi.mock('@/lib/uploads/manager', async () => {
     default: {
       getFile: (id: string) =>
         files[id] ? { id, name: files[id].name } : null,
-      getFileChunks: (id: string) =>
+      getFileChunksCached: async (id: string) =>
         files[id].chunks.map((content) => ({
           content,
           embedding: embedDeterministic(content),
@@ -33,7 +33,7 @@ import UploadStore from '../store';
 describe('UploadStore.query', () => {
   it('ranks chunks by reciprocal-rank fusion over the queries (current behavior)', async () => {
     const embedding = new FakeEmbedding();
-    const store = new UploadStore({ embeddingModel: embedding, fileIds: ['f1'] });
+    const store = await UploadStore.create({ embeddingModel: embedding, fileIds: ['f1'] });
 
     const results = await store.query(['rust', 'go concurrency'], 10);
 
@@ -63,17 +63,16 @@ describe('UploadStore.query', () => {
   });
 
   it('respects topK', async () => {
-    const store = new UploadStore({
+    const store = await UploadStore.create({
       embeddingModel: new FakeEmbedding(),
       fileIds: ['f1'],
     });
     expect(await store.query(['rust'], 2)).toHaveLength(2);
   });
 
-  it('throws for an unknown file id', () => {
-    expect(
-      () =>
-        new UploadStore({ embeddingModel: new FakeEmbedding(), fileIds: ['x'] }),
-    ).toThrow('File with ID x not found');
+  it('throws for an unknown file id', async () => {
+    await expect(
+      UploadStore.create({ embeddingModel: new FakeEmbedding(), fileIds: ['x'] }),
+    ).rejects.toThrow('File with ID x not found');
   });
 });

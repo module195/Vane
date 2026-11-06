@@ -327,16 +327,16 @@ const getQualityPrompt = (
 /* The iteration counter is the only part that changes between iterations, so
    each prompt ends with it: everything before stays byte-identical and
    prefix caches (OpenAI, Gemini, llama.cpp/LM Studio, Ollama) can reuse it. */
-export const getResearcherPrompt = (
+export const getResearcherPrompt = async (
   actionDesc: string,
   mode: 'speed' | 'balanced' | 'quality',
   i: number,
   maxIteration: number,
   fileIds: string[],
-) => {
+): Promise<string> => {
   let prompt = '';
 
-  const filesData = UploadStore.getFileData(fileIds);
+  const filesData = await UploadStore.getFileData(fileIds);
 
   const fileDesc = filesData
     .map(
