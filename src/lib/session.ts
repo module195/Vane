@@ -12,7 +12,11 @@ class SessionManager {
   private static sessions: Map<string, SessionManager> = sessions;
   readonly id: string;
   private blocks = new Map<string, Block>();
-  private events: { event: string; data: any }[] = [];
+  /* Number of blocks that existed when researchComplete fired, so the
+     snapshot replays it in the same place; null until it fires. */
+  private researchCompleteAt: number | null = null;
+  /* The 'end' or 'error' event, once the answer is over. */
+  private terminal: { event: string; data: any } | null = null;
   private emitter = new EventEmitter();
   private TTL_MS = 30 * 60 * 1000;
 
@@ -43,8 +47,15 @@ class SessionManager {
   }
 
   emit(event: string, data: any) {
+    if (event === 'data' && data?.type === 'researchComplete') {
+      this.researchCompleteAt = this.blocks.size;
+    } else if (event === 'end' || event === 'error') {
+      this.terminal = { event, data };
+    }
+    // An 'error' with no listener (the client left) makes EventEmitter
+    // throw, which skipped saving the failed message.
+    if (event === 'error' && this.emitter.listenerCount('error') === 0) return;
     this.emitter.emit(event, data);
-    this.events.push({ event, data });
   }
 
   emitBlock(block: Block) {
@@ -73,13 +84,34 @@ class SessionManager {
     }
   }
 
+  /* Appends streamed text to a text block and sends only the new piece.
+     A 'replace' patch carried the whole answer on every token, so the
+     stream grew with the square of the answer length. */
+  appendBlockText(blockId: string, delta: string) {
+    const block = this.blocks.get(blockId);
+
+    if (!block || block.type !== 'text' || !delta) return;
+
+    block.data += delta;
+    this.emit('data', {
+      type: 'appendText',
+      blockId,
+      delta,
+    });
+  }
+
   getAllBlocks() {
     return Array.from(this.blocks.values());
   }
 
+  /* Calls the listener with a snapshot of the session (one 'block' event
+     per block with its current content, researchComplete if it fired, and
+     the final 'end'/'error' if the answer is over), then with every live
+     event. The snapshot replaces the old replay of every buffered event:
+     a long answer sent thousands of patches on reconnect. Snapshot and
+     subscription happen in the same synchronous call, so no event can be
+     lost or delivered twice between them. */
   subscribe(listener: (event: string, data: any) => void): () => void {
-    const currentEventsLength = this.events.length;
-
     const handler = (event: string) => (data: any) => listener(event, data);
     const dataHandler = handler('data');
     const endHandler = handler('end');
@@ -89,9 +121,19 @@ class SessionManager {
     this.emitter.on('end', endHandler);
     this.emitter.on('error', errorHandler);
 
-    for (let i = 0; i < currentEventsLength; i++) {
-      const { event, data } = this.events[i];
-      listener(event, data);
+    let index = 0;
+    for (const block of this.blocks.values()) {
+      if (index === this.researchCompleteAt) {
+        listener('data', { type: 'researchComplete' });
+      }
+      listener('data', { type: 'block', block });
+      index++;
+    }
+    if (this.researchCompleteAt !== null && this.researchCompleteAt >= index) {
+      listener('data', { type: 'researchComplete' });
+    }
+    if (this.terminal) {
+      listener(this.terminal.event, this.terminal.data);
     }
 
     return () => {

@@ -127,6 +127,15 @@ export const createFakeSession = () => {
         data: { type: 'updateBlock', blockId: id, patch },
       });
     },
+    appendBlockText(id: string, delta: string) {
+      const block = blocks.get(id);
+      if (!block || block.type !== 'text' || !delta) return;
+      block.data += delta;
+      events.push({
+        event: 'data',
+        data: { type: 'appendText', blockId: id, delta },
+      });
+    },
     getAllBlocks() {
       return Array.from(blocks.values());
     },

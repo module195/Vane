@@ -15,9 +15,10 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { getSuggestions } from '../actions';
 import { openReconnectStream } from './reconnectStream';
+import { readNdjsonStream } from './ndjson';
+import { applyBlockEvent } from './streamBlocks';
 import { MinimalProvider } from '../models/types';
 import { getAutoMediaSearch } from '../config/clientRegistry';
-import { applyPatch } from 'rfc6902';
 import { Widget } from '@/components/ChatWindow';
 import { claimMessageEnd } from '@/lib/utils/messageEndGuard';
 import { processTextBlock } from '@/lib/utils/citations';
@@ -391,32 +392,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        const reader = body.getReader();
-        const decoder = new TextDecoder('utf-8');
-
-        let partialChunk = '';
-
         const messageHandler = getMessageHandler(lastMsg);
 
         try {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            partialChunk += decoder.decode(value, { stream: true });
-
-            try {
-              const messages = partialChunk.split('\n');
-              for (const msg of messages) {
-                if (!msg.trim()) continue;
-                const json = JSON.parse(msg);
-                messageHandler(json);
-              }
-              partialChunk = '';
-            } catch (error) {
-              console.warn('Incomplete JSON, waiting for next chunk...');
-            }
-          }
+          await readNdjsonStream(body, messageHandler);
         } finally {
           isReconnectingRef.current = false;
         }
@@ -540,58 +519,29 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
-      if (data.type === 'block') {
+      if (
+        data.type === 'block' ||
+        data.type === 'updateBlock' ||
+        data.type === 'appendText'
+      ) {
         setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.messageId === messageId) {
-              const exists = msg.responseBlocks.findIndex(
-                (b) => b.id === data.block.id,
-              );
-
-              if (exists !== -1) {
-                const existingBlocks = [...msg.responseBlocks];
-                existingBlocks[exists] = data.block;
-
-                return {
+          prev.map((msg) =>
+            msg.messageId === messageId
+              ? {
                   ...msg,
-                  responseBlocks: existingBlocks,
-                };
-              }
-
-              return {
-                ...msg,
-                responseBlocks: [...msg.responseBlocks, data.block],
-              };
-            }
-            return msg;
-          }),
+                  responseBlocks: applyBlockEvent(msg.responseBlocks, data),
+                }
+              : msg,
+          ),
         );
-
-        if (
-          (data.block.type === 'source' && data.block.data.length > 0) ||
-          data.block.type === 'text'
-        ) {
-          setMessageAppeared(true);
-        }
       }
 
-      if (data.type === 'updateBlock') {
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.messageId === messageId) {
-              const updatedBlocks = msg.responseBlocks.map((block) => {
-                if (block.id === data.blockId) {
-                  const updatedBlock = { ...block };
-                  applyPatch(updatedBlock, data.patch);
-                  return updatedBlock;
-                }
-                return block;
-              });
-              return { ...msg, responseBlocks: updatedBlocks };
-            }
-            return msg;
-          }),
-        );
+      if (
+        data.type === 'block' &&
+        ((data.block.type === 'source' && data.block.data.length > 0) ||
+          data.block.type === 'text')
+      ) {
+        setMessageAppeared(true);
       }
 
       if (data.type === 'messageEnd') {
@@ -742,31 +692,9 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (!res.body) throw new Error('No response body');
 
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    let partialChunk = '';
-
     const messageHandler = getMessageHandler(newMessage);
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      partialChunk += decoder.decode(value, { stream: true });
-
-      try {
-        const messages = partialChunk.split('\n');
-        for (const msg of messages) {
-          if (!msg.trim()) continue;
-          const json = JSON.parse(msg);
-          messageHandler(json);
-        }
-        partialChunk = '';
-      } catch (error) {
-        console.warn('Incomplete JSON, waiting for next chunk...');
-      }
-    }
+    await readNdjsonStream(res.body, messageHandler);
   };
 
   return (
