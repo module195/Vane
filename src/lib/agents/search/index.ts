@@ -207,6 +207,9 @@ class SearchAgent {
 
         responseBlockId = block.id;
       } else {
+        // Providers end with an empty finish_reason chunk; it adds no text.
+        if (!chunk.contentChunk) continue;
+
         const block = session.getBlock(responseBlockId) as TextBlock | null;
 
         if (!block) {
