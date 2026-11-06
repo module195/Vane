@@ -18,7 +18,7 @@ export const POST = async (
     const encoder = new TextEncoder();
 
     let closed = false;
-    // subscribe() replays past events synchronously, so for a session that
+    // subscribe() sends the session snapshot synchronously, so for a session that
     // already finished the 'end' event fires before `disconnect` is assigned.
     // Track the unsubscribe function in a mutable variable and close once.
     let disconnect: (() => void) | undefined;
