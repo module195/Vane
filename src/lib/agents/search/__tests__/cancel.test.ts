@@ -5,7 +5,23 @@ import { StreamTextOutput } from '@/lib/models/types';
 /* Records every update of the messages row. */
 const dbState = vi.hoisted(() => ({
   updates: [] as Record<string, any>[],
+  /* Column names in each update's where clause. */
+  whereColumns: [] as string[][],
 }));
+
+/* Collects the column names a drizzle condition refers to. */
+const columnsOf = (cond: any): string[] => {
+  const names = new Set<string>();
+  const seen = new Set<any>();
+  const walk = (v: any) => {
+    if (!v || typeof v !== 'object' || seen.has(v)) return;
+    seen.add(v);
+    if (typeof v.name === 'string' && v.table) names.add(v.name);
+    for (const k of Object.keys(v)) if (k !== 'table') walk(v[k]);
+  };
+  walk(cond);
+  return [...names];
+};
 
 vi.mock('@/lib/db', () => {
   const chain = (onSet?: (v: any) => void) => ({
@@ -14,14 +30,24 @@ vi.mock('@/lib/db', () => {
       return chain();
     },
     values: async () => undefined,
-    where: () => chain(),
+    where: (cond: any) => {
+      onWhere?.(cond);
+      return chain();
+    },
     execute: async () => undefined,
   });
+  let onWhere: ((cond: any) => void) | undefined;
   return {
     default: {
       query: { messages: { findFirst: async () => undefined } },
       insert: () => chain(),
-      update: () => chain((v) => dbState.updates.push(v)),
+      update: () => {
+        onWhere = (cond) => {
+          dbState.whereColumns.push(columnsOf(cond));
+          onWhere = undefined;
+        };
+        return chain((v) => dbState.updates.push(v));
+      },
       delete: () => chain(),
     },
   };
@@ -96,6 +122,7 @@ const lastUpdate = () => dbState.updates[dbState.updates.length - 1];
 
 beforeEach(() => {
   dbState.updates = [];
+  dbState.whereColumns = [];
   searx.calls = 0;
 });
 
@@ -113,7 +140,11 @@ describe('cancelling an answer', () => {
     });
     const session = SessionManager.createSession();
     const events: string[] = [];
-    session.subscribe((event) => events.push(event));
+    let updatesAtEnd = -1;
+    session.subscribe((event) => {
+      events.push(event);
+      if (event === 'end') updatesAtEnd = dbState.updates.length;
+    });
 
     const run = new SearchAgent().searchAsync(session, input(llm));
 
@@ -137,6 +168,11 @@ describe('cancelling an answer', () => {
     expect(
       lastUpdate().responseBlocks.some((b: any) => b.type === 'research'),
     ).toBe(true);
+    // Saved before 'end', so a client that refetches on messageEnd sees
+    // it, and only if this session still owns the row (a rewrite may have
+    // taken it over).
+    expect(updatesAtEnd).toBe(dbState.updates.length);
+    expect(dbState.whereColumns.at(-1)).toContain('backendId');
   });
 
   it('stops the writer mid-answer and keeps the text written so far', async () => {

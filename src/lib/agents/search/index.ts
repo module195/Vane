@@ -52,7 +52,6 @@ class SearchAgent {
     session: SessionManager,
     input: SearchAgentInput,
   ) {
-    session.emit('end', {});
     try {
       await db
         .update(messages)
@@ -64,12 +63,16 @@ class SearchAgent {
           and(
             eq(messages.chatId, input.chatId),
             eq(messages.messageId, input.messageId),
+            // A rewrite cancels this session and takes over the row.
+            eq(messages.backendId, session.id),
           ),
         )
         .execute();
     } catch (dbErr) {
       console.error('SearchAgent: failed to save cancelled answer:', dbErr);
     }
+    // After the write, so a client that refetches on messageEnd sees it.
+    session.emit('end', {});
   }
 
   /* Persists the error status and the blocks produced so far, so a failed
@@ -86,6 +89,7 @@ class SearchAgent {
           and(
             eq(messages.chatId, input.chatId),
             eq(messages.messageId, input.messageId),
+            eq(messages.backendId, session.id),
           ),
         )
         .execute();
@@ -267,10 +271,17 @@ class SearchAgent {
     // The answer is done: the client stops loading now, while the
     // follow-up suggestions are generated on the same stream.
     session.emit('data', { type: 'answerEnd' });
-    await this.saveCompleted(session, input);
 
-    if (await this.emitSuggestions(session, input)) {
+    // The answer is already on screen: a failure from here on (saving,
+    // suggestions) must not turn it into an error for the client.
+    try {
       await this.saveCompleted(session, input);
+
+      if (await this.emitSuggestions(session, input)) {
+        await this.saveCompleted(session, input);
+      }
+    } catch (err) {
+      console.error('SearchAgent: failed after the answer ended:', err);
     }
 
     session.emit('end', {});
