@@ -36,6 +36,7 @@
   },
   "MessageInput": {
     "askAnything": "Pergunte qualquer coisa...",
+    "stop": "Parar resposta",
     "followUp": "Faça uma pergunta de acompanhamento"
   },
   "Sources": {

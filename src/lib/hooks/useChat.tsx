@@ -13,7 +13,7 @@ import {
 import crypto from 'crypto';
 import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { getSuggestions } from '../actions';
+import { cancelAnswer, getSuggestions } from '../actions';
 import { openReconnectStream } from './reconnectStream';
 import { readNdjsonStream } from './ndjson';
 import { applyBlockEvent } from './streamBlocks';
@@ -62,6 +62,7 @@ type ChatContext = {
     rewrite?: boolean,
   ) => Promise<void>;
   rewrite: (messageId: string) => void;
+  stopAnswer: () => void;
   setChatModelProvider: (provider: ChatModelProvider) => void;
   setEmbeddingModelProvider: (provider: EmbeddingModelProvider) => void;
 };
@@ -255,6 +256,7 @@ export const chatContext = createContext<ChatContext>({
   embeddingModelProvider: { key: '', providerId: '' },
   researchEnded: false,
   rewrite: () => {},
+  stopAnswer: () => {},
   sendMessage: async () => {},
   setFileIds: () => {},
   setFiles: () => {},
@@ -356,6 +358,17 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
   const isReconnectingRef = useRef(false);
   const handledMessageEndRef = useRef<Set<string>>(new Set());
+  /* backendIds of answers the user stopped: no follow-up suggestions. */
+  const stoppedRef = useRef<Set<string>>(new Set());
+
+  /* Stop button: the server aborts the answer and the open stream ends
+     with messageEnd, which finishes the message as usual. */
+  const stopAnswer = () => {
+    const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+    if (!chatId || !lastMsg || lastMsg.status !== 'answering') return;
+    stoppedRef.current.add(lastMsg.backendId);
+    cancelAnswer(chatId, lastMsg.messageId);
+  };
 
   const checkReconnect = async () => {
     if (isReconnectingRef.current) return;
@@ -601,7 +614,11 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           (block) => block.type === 'suggestion',
         );
 
-        if (hasSourceBlocks && !hasSuggestions) {
+        if (
+          hasSourceBlocks &&
+          !hasSuggestions &&
+          !stoppedRef.current.has(message.backendId)
+        ) {
           const suggestions = await getSuggestions(newHistory);
           const suggestionBlock: Block = {
             id: crypto.randomBytes(7).toString('hex'),
@@ -719,6 +736,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         setSources,
         setOptimizationMode,
         rewrite,
+        stopAnswer,
         sendMessage,
         setChatModelProvider,
         chatModelProvider,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getSuggestions } from '../actions';
+import { cancelAnswer, getSuggestions } from '../actions';
 
 const respond = (status: number, body: unknown) =>
   vi.fn(
@@ -49,5 +49,33 @@ describe('getSuggestions', () => {
     );
 
     expect(await getSuggestions([])).toEqual([]);
+  });
+});
+
+describe('cancelAnswer', () => {
+  it('posts the chat and message ids to the cancel route', async () => {
+    const fetchMock = respond(200, { ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await cancelAnswer('c1', 'm1')).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('/api/chat/cancel');
+    expect(JSON.parse(init.body as string)).toEqual({
+      chatId: 'c1',
+      messageId: 'm1',
+    });
+  });
+
+  it('never throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    expect(await cancelAnswer('c1', 'm1')).toBe(false);
   });
 });

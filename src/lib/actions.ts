@@ -1,3 +1,23 @@
+/* Asks the server to stop the answer being produced for a message. The
+   open chat stream then ends with messageEnd as usual. Best effort: a
+   failure leaves the answer running, as before. */
+export const cancelAnswer = async (
+  chatId: string,
+  messageId: string,
+): Promise<boolean> => {
+  try {
+    const res = await fetch('/api/chat/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, messageId }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('Failed to stop the answer:', err);
+    return false;
+  }
+};
+
 /* Follow-up suggestions are optional: any failure (HTTP error, bad body,
    network) yields an empty list instead of breaking the chat. */
 export const getSuggestions = async (

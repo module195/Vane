@@ -152,6 +152,7 @@ export const POST = async (req: Request) => {
 
     const agent = new SearchAgent();
     const session = SessionManager.createSession();
+    session.bindMessage(body.message.chatId, body.message.messageId);
 
     const stream = createSessionStream(session, {
       signal: req.signal,

@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import AttachSmall from './MessageInputActions/AttachSmall';
@@ -7,7 +7,7 @@ import { useChat } from '@/lib/hooks/useChat';
 import { useTranslations } from 'next-intl';
 
 const MessageInput = () => {
-  const { loading, sendMessage } = useChat();
+  const { loading, sendMessage, stopAnswer } = useChat();
   const t = useTranslations('MessageInput');
 
   const [copilotEnabled, setCopilotEnabled] = useState(false);
@@ -47,6 +47,25 @@ const MessageInput = () => {
     };
   }, []);
 
+  const submitButton = loading ? (
+    <button
+      type="button"
+      onClick={stopAnswer}
+      aria-label={t('stop')}
+      title={t('stop')}
+      className="bg-[#24A0ED] text-white hover:bg-opacity-85 transition duration-100 rounded-full p-2"
+    >
+      <Square className="bg-background" size={17} fill="currentColor" />
+    </button>
+  ) : (
+    <button
+      disabled={message.trim().length === 0}
+      className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
+    >
+      <ArrowUp className="bg-background" size={17} />
+    </button>
+  );
+
   return (
     <form
       onSubmit={(e) => {
@@ -79,23 +98,11 @@ const MessageInput = () => {
         className="transition bg-transparent dark:placeholder:text-white/50 placeholder:text-sm text-sm dark:text-white resize-none focus:outline-none w-full px-2 max-h-24 lg:max-h-36 xl:max-h-48 flex-grow flex-shrink"
         placeholder={t('followUp')}
       />
-      {mode === 'single' && (
-        <button
-          disabled={message.trim().length === 0 || loading}
-          className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
-        >
-          <ArrowUp className="bg-background" size={17} />
-        </button>
-      )}
+      {mode === 'single' && submitButton}
       {mode === 'multi' && (
         <div className="flex flex-row items-center justify-between w-full pt-2">
           <AttachSmall />
-          <button
-            disabled={message.trim().length === 0 || loading}
-            className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
-          >
-            <ArrowUp className="bg-background" size={17} />
-          </button>
+          {submitButton}
         </div>
       )}
     </form>

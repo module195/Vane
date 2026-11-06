@@ -4,9 +4,17 @@ import { Block } from './types';
 
 const sessions =
   (global as any)._sessionManagerSessions || new Map<string, SessionManager>();
+/* "chatId:messageId" -> session id of the answer being produced for it,
+   so the UI can stop an answer without knowing the server session id. */
+const sessionsByMessage: Map<string, string> =
+  (global as any)._sessionManagerByMessage || new Map<string, string>();
 if (process.env.NODE_ENV !== 'production') {
   (global as any)._sessionManagerSessions = sessions;
+  (global as any)._sessionManagerByMessage = sessionsByMessage;
 }
+
+const messageKey = (chatId: string, messageId: string) =>
+  `${chatId}:${messageId}`;
 
 class SessionManager {
   private static sessions: Map<string, SessionManager> = sessions;
@@ -33,6 +41,9 @@ class SessionManager {
 
     setTimeout(() => {
       SessionManager.sessions.delete(this.id);
+      for (const [key, id] of sessionsByMessage) {
+        if (id === this.id) sessionsByMessage.delete(key);
+      }
     }, this.TTL_MS);
   }
 
@@ -48,6 +59,20 @@ class SessionManager {
     const session = new SessionManager();
     this.sessions.set(session.id, session);
     return session;
+  }
+
+  /* Marks this session as the one answering chatId/messageId. A rewrite
+     of the same message replaces the previous binding. */
+  bindMessage(chatId: string, messageId: string) {
+    sessionsByMessage.set(messageKey(chatId, messageId), this.id);
+  }
+
+  static getSessionForMessage(
+    chatId: string,
+    messageId: string,
+  ): SessionManager | undefined {
+    const id = sessionsByMessage.get(messageKey(chatId, messageId));
+    return id ? this.sessions.get(id) : undefined;
   }
 
   get signal(): AbortSignal {

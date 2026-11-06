@@ -36,6 +36,7 @@
   },
   "MessageInput": {
     "askAnything": "Ask anything...",
+    "stop": "Stop answer",
     "followUp": "Ask a follow-up"
   },
   "Sources": {
