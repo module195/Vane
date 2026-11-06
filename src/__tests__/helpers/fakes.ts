@@ -10,6 +10,7 @@ import {
   StreamTextOutput,
 } from '@/lib/models/types';
 import { Chunk } from '@/lib/types';
+import { scopedSleep } from '@/lib/abortScope';
 
 export type LLMCall = {
   kind: 'generateText' | 'streamText' | 'generateObject' | 'streamObject';
@@ -17,6 +18,10 @@ export type LLMCall = {
 };
 
 type Handlers = {
+  /* Simulated model latency before each response and each streamed
+     chunk. Like a real provider given the session's signal, the wait
+     rejects as soon as the enclosing abort scope is cancelled. */
+  latencyMs?: number;
   generateObject?: (input: GenerateObjectInput, callIndex: number) => any;
   streamText?: (
     input: GenerateTextInput,
@@ -35,6 +40,10 @@ export class FakeLLM extends BaseLLM<Handlers> {
     return this.calls.filter((c) => c.kind === kind).length;
   }
 
+  private async wait() {
+    if (this.config.latencyMs) await scopedSleep(this.config.latencyMs);
+  }
+
   async generateText(input: GenerateTextInput): Promise<GenerateTextOutput> {
     this.calls.push({ kind: 'generateText', input });
     return { content: '', toolCalls: [] };
@@ -46,12 +55,16 @@ export class FakeLLM extends BaseLLM<Handlers> {
     const index = this.count('streamText');
     this.calls.push({ kind: 'streamText', input });
     const chunks = this.config.streamText?.(input, index) ?? [];
-    for (const chunk of chunks) yield chunk;
+    for (const chunk of chunks) {
+      await this.wait();
+      yield chunk;
+    }
   }
 
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {
     const index = this.count('generateObject');
     this.calls.push({ kind: 'generateObject', input });
+    await this.wait();
     if (!this.config.generateObject) {
       throw new Error('FakeLLM: no generateObject handler');
     }

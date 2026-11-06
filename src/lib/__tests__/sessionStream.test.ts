@@ -75,7 +75,9 @@ describe('createSessionStream', () => {
     vi.advanceTimersByTime(1000);
     controller.abort();
 
-    expect(vi.getTimerCount()).toBe(ttlTimers);
+    // The keepalive is gone; the one new timer is the session's idle
+    // timer (cancels the answer if nobody reconnects within 5 min).
+    expect(vi.getTimerCount()).toBe(ttlTimers + 1);
     // Events after the abort are not written and do not throw.
     session.emitBlock({ id: 't', type: 'text', data: 'late' });
     session.emit('end', {});

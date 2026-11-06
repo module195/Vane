@@ -2,6 +2,7 @@ import { getSearchProvider } from './config/serverRegistry';
 import { searchFirecrawl } from './firecrawlSearch';
 import { searchSearxng, SearxngSearchOptions } from './searxng';
 import { SearchHttpError } from './searchErrors';
+import { isScopeAborted, scopedSleep, throwIfScopeAborted } from './abortScope';
 
 /** Searches allowed in flight at once, across all research actions. */
 const DEFAULT_SEARCH_CONCURRENCY = 2;
@@ -53,12 +54,13 @@ const isRetryable = (err: unknown) =>
   (err instanceof SearchHttpError && RETRYABLE_STATUSES.includes(err.status)) ||
   (err instanceof Error && /timed out/i.test(err.message));
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const runProvider = (query: string, opts?: SearxngSearchOptions) =>
-  getSearchProvider() === 'firecrawl'
+const runProvider = (query: string, opts?: SearxngSearchOptions) => {
+  // A cancelled answer may still have searches queued for a slot.
+  throwIfScopeAborted();
+  return getSearchProvider() === 'firecrawl'
     ? searchFirecrawl(query, opts)
     : searchSearxng(query, opts);
+};
 
 /**
  * Web search used by the researcher. Runs on the provider chosen in
@@ -77,7 +79,9 @@ export const searchWeb = async (query: string, opts?: SearxngSearchOptions) => {
       return await withSlot(() => runProvider(query, opts));
     } catch (err) {
       const delay = searchRetry.delaysMs[attempt];
-      if (delay === undefined || !isRetryable(err)) throw err;
+      if (delay === undefined || !isRetryable(err) || isScopeAborted()) {
+        throw err;
+      }
 
       const retryAfter =
         err instanceof SearchHttpError && err.retryAfterMs !== undefined
@@ -87,7 +91,7 @@ export const searchWeb = async (query: string, opts?: SearxngSearchOptions) => {
       console.log(
         `[search] "${query}" failed (${(err as Error).message}); retrying in ${retryAfter ?? delay} ms`,
       );
-      await sleep(retryAfter ?? delay);
+      await scopedSleep(retryAfter ?? delay);
     }
   }
 };

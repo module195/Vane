@@ -10,12 +10,25 @@ import { messages } from '@/lib/db/schema';
 import { and, eq, gt } from 'drizzle-orm';
 import { Message, TextBlock } from '@/lib/types';
 import { getTokenCount } from '@/lib/utils/splitText';
+import { runWithAbortSignal, throwIfScopeAborted } from '@/lib/abortScope';
 
 class SearchAgent {
+  /* Runs under the session's abort signal: LLM calls, searches and page
+     downloads started by any stage stop when the session is cancelled. */
   async searchAsync(session: SessionManager, input: SearchAgentInput) {
+    return runWithAbortSignal(session.signal, () =>
+      this.runSearch(session, input),
+    );
+  }
+
+  private async runSearch(session: SessionManager, input: SearchAgentInput) {
     try {
       await this._searchAsync(session, input);
     } catch (err) {
+      if (session.signal?.aborted) {
+        await this.saveCancelled(session, input);
+        return;
+      }
       console.error('SearchAgent error:', err);
       session.emit('error', {
         data:
@@ -24,6 +37,33 @@ class SearchAgent {
             : 'An unknown error occurred during search',
       });
       await this.saveFailure(session, input);
+    }
+  }
+
+  /* The user stopped the answer (or nobody listened for a long time):
+     end the stream normally and keep what was produced so far, under the
+     existing 'completed' status (no new status, no schema change). */
+  private async saveCancelled(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ) {
+    session.emit('end', {});
+    try {
+      await db
+        .update(messages)
+        .set({
+          status: 'completed',
+          responseBlocks: session.getAllBlocks(),
+        })
+        .where(
+          and(
+            eq(messages.chatId, input.chatId),
+            eq(messages.messageId, input.messageId),
+          ),
+        )
+        .execute();
+    } catch (dbErr) {
+      console.error('SearchAgent: failed to save cancelled answer:', dbErr);
     }
   }
 
@@ -96,6 +136,8 @@ class SearchAgent {
       query: input.followUp,
       llm: input.config.llm,
     });
+
+    throwIfScopeAborted();
 
     const widgetPromise = WidgetExecutor.executeAll({
       classification,
@@ -196,6 +238,8 @@ class SearchAgent {
     let responseBlockId = '';
 
     for await (const chunk of answerStream) {
+      // Leaving the loop closes the provider's stream as well.
+      throwIfScopeAborted();
       if (!responseBlockId) {
         const block: TextBlock = {
           id: crypto.randomUUID(),
@@ -212,6 +256,8 @@ class SearchAgent {
         session.appendBlockText(responseBlockId, chunk.contentChunk);
       }
     }
+
+    throwIfScopeAborted();
 
     session.emit('end', {});
 

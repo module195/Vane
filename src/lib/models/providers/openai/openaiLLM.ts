@@ -19,6 +19,18 @@ import {
 } from 'openai/resources/index.mjs';
 import { Message } from '@/lib/types';
 import { repairJson } from '@toolsycc/json-repair';
+import { currentAbortSignal } from '@/lib/abortScope';
+
+/* Gives every request the chat answer's abort signal (lib/abortScope.ts)
+   when the caller set none. As a request option (not a fetch wrapper) it
+   makes the SDK raise APIUserAbortError instead of retrying. */
+class ScopedOpenAI extends OpenAI {
+  // The SDK does not export FinalRequestOptions; only signal is used here.
+  protected async prepareOptions(options: { signal?: AbortSignal | null }) {
+    await super.prepareOptions(options as any);
+    options.signal ??= currentAbortSignal();
+  }
+}
 
 type OpenAIConfig = {
   apiKey: string;
@@ -34,7 +46,7 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
   constructor(protected config: OpenAIConfig) {
     super(config);
 
-    this.openAIClient = new OpenAI({
+    this.openAIClient = new ScopedOpenAI({
       apiKey: this.config.apiKey,
       baseURL: this.config.baseURL || 'https://api.openai.com/v1',
       defaultHeaders: this.config.defaultHeaders,

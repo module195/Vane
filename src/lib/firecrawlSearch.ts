@@ -1,4 +1,5 @@
 import { getFirecrawlConfig, firecrawlHeaders } from './firecrawl';
+import { CancelledError, isScopeAborted, withScopeSignal } from './abortScope';
 import { SearchHttpError, parseRetryAfter } from './searchErrors';
 import type { SearxngSearchOptions, SearxngSearchResult } from './searxng';
 
@@ -81,11 +82,12 @@ export const searchFirecrawl = async (
       method: 'POST',
       headers: firecrawlHeaders(firecrawl.apiKey),
       body: JSON.stringify(buildFirecrawlSearchBody(query, opts)),
-      signal: AbortSignal.timeout(
-        FIRECRAWL_SEARCH_TIMEOUT_MS + RESPONSE_GRACE_MS,
+      signal: withScopeSignal(
+        AbortSignal.timeout(FIRECRAWL_SEARCH_TIMEOUT_MS + RESPONSE_GRACE_MS),
       ),
     });
   } catch (err: any) {
+    if (isScopeAborted()) throw new CancelledError();
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
       throw new Error('Firecrawl search timed out');
     }

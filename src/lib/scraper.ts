@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import { getFirecrawlConfig, firecrawlHeaders } from './firecrawl';
+import { throwIfScopeAborted, withScopeSignal } from './abortScope';
 import { assertPublicHttpURL, fetchPublicURL } from './security/urlGuard';
 
 type ScrapeResult = { content: string; title: string };
@@ -42,6 +43,7 @@ class Scraper {
 
   static async scrape(url: string): Promise<ScrapeResult> {
     try {
+      throwIfScopeAborted();
       /* URLs come from the model, so refuse internal addresses (SSRF). */
       await assertPublicHttpURL(url);
 
@@ -84,8 +86,10 @@ class Scraper {
         formats: ['markdown'],
         timeout: this.FIRECRAWL_TIMEOUT_MS,
       }),
-      signal: AbortSignal.timeout(
-        this.FIRECRAWL_TIMEOUT_MS + this.FIRECRAWL_RESPONSE_GRACE_MS,
+      signal: withScopeSignal(
+        AbortSignal.timeout(
+          this.FIRECRAWL_TIMEOUT_MS + this.FIRECRAWL_RESPONSE_GRACE_MS,
+        ),
       ),
     });
 
@@ -121,7 +125,7 @@ class Scraper {
         'User-Agent': USER_AGENT,
         Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
       },
-      signal: AbortSignal.timeout(this.FETCH_TIMEOUT_MS),
+      signal: withScopeSignal(AbortSignal.timeout(this.FETCH_TIMEOUT_MS)),
     });
 
     if (!res.ok) {

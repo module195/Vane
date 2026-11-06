@@ -13,6 +13,7 @@ import {
   getContextWindow,
 } from '@/lib/context/budget';
 import { compactResearchHistory } from '@/lib/context/compact';
+import { throwIfScopeAborted } from '@/lib/abortScope';
 
 /** Rough per-tool cost of the tool schema sent with each request. */
 const TOOL_SCHEMA_OVERHEAD_TOKENS = 60;
@@ -75,6 +76,10 @@ class Researcher {
     );
 
     for (let i = 0; i < maxIteration; i++) {
+      // A cancelled answer starts no new iteration (actions swallow
+      // per-query failures, so an aborted search does not throw here).
+      throwIfScopeAborted();
+
       const researcherPrompt = getResearcherPrompt(
         availableActionsDescription,
         input.config.mode,
@@ -191,6 +196,8 @@ class Researcher {
           });
         }
       }
+
+      throwIfScopeAborted();
 
       if (finalToolCalls.length === 0) {
         break;
