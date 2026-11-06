@@ -53,6 +53,16 @@ export const POST = async (
               }) + '\n',
             ),
           );
+        } else if (data.type === 'appendText') {
+          writer.write(
+            encoder.encode(
+              JSON.stringify({
+                type: 'appendText',
+                blockId: data.blockId,
+                delta: data.delta,
+              }) + '\n',
+            ),
+          );
         } else if (data.type === 'researchComplete') {
           writer.write(
             encoder.encode(

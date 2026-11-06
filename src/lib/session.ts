@@ -84,6 +84,22 @@ class SessionManager {
     }
   }
 
+  /* Appends streamed text to a text block and sends only the new piece.
+     A 'replace' patch carried the whole answer on every token, so the
+     stream grew with the square of the answer length. */
+  appendBlockText(blockId: string, delta: string) {
+    const block = this.blocks.get(blockId);
+
+    if (!block || block.type !== 'text' || !delta) return;
+
+    block.data += delta;
+    this.emit('data', {
+      type: 'appendText',
+      blockId,
+      delta,
+    });
+  }
+
   getAllBlocks() {
     return Array.from(this.blocks.values());
   }

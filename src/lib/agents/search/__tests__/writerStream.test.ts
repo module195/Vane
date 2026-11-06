@@ -100,4 +100,27 @@ describe('SearchAgent writer stream', () => {
       expect.objectContaining({ type: 'text', data: 'Olá mundo' }),
     ]);
   });
+
+  it('streams only the new text of each token, and saves the full answer', async () => {
+    const tokens = Array.from({ length: 300 }, (_, i) => ` palavra${i}`);
+    const { seen, saved } = await run(tokens.map((t) => chunk(t)));
+
+    const updates = seen.filter((e) => e.data?.blockId);
+    expect(updates.map((e) => e.data.type)).toEqual(
+      Array(tokens.length - 1).fill('appendText'),
+    );
+    expect(updates.map((e) => e.data.delta)).toEqual(tokens.slice(1));
+
+    // Wire size grows linearly with the answer, not with its square.
+    const answer = tokens.join('');
+    const wire = updates.reduce(
+      (n, e) => n + JSON.stringify(e.data).length + 1,
+      0,
+    );
+    expect(wire).toBeLessThan(answer.length + 120 * tokens.length);
+
+    expect(saved.responseBlocks).toEqual([
+      expect.objectContaining({ type: 'text', data: answer }),
+    ]);
+  });
 });

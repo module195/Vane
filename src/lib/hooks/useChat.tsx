@@ -16,9 +16,9 @@ import { toast } from 'sonner';
 import { getSuggestions } from '../actions';
 import { openReconnectStream } from './reconnectStream';
 import { readNdjsonStream } from './ndjson';
+import { applyBlockEvent } from './streamBlocks';
 import { MinimalProvider } from '../models/types';
 import { getAutoMediaSearch } from '../config/clientRegistry';
-import { applyPatch } from 'rfc6902';
 import { Widget } from '@/components/ChatWindow';
 import { claimMessageEnd } from '@/lib/utils/messageEndGuard';
 import { processTextBlock } from '@/lib/utils/citations';
@@ -519,58 +519,29 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
-      if (data.type === 'block') {
+      if (
+        data.type === 'block' ||
+        data.type === 'updateBlock' ||
+        data.type === 'appendText'
+      ) {
         setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.messageId === messageId) {
-              const exists = msg.responseBlocks.findIndex(
-                (b) => b.id === data.block.id,
-              );
-
-              if (exists !== -1) {
-                const existingBlocks = [...msg.responseBlocks];
-                existingBlocks[exists] = data.block;
-
-                return {
+          prev.map((msg) =>
+            msg.messageId === messageId
+              ? {
                   ...msg,
-                  responseBlocks: existingBlocks,
-                };
-              }
-
-              return {
-                ...msg,
-                responseBlocks: [...msg.responseBlocks, data.block],
-              };
-            }
-            return msg;
-          }),
+                  responseBlocks: applyBlockEvent(msg.responseBlocks, data),
+                }
+              : msg,
+          ),
         );
-
-        if (
-          (data.block.type === 'source' && data.block.data.length > 0) ||
-          data.block.type === 'text'
-        ) {
-          setMessageAppeared(true);
-        }
       }
 
-      if (data.type === 'updateBlock') {
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.messageId === messageId) {
-              const updatedBlocks = msg.responseBlocks.map((block) => {
-                if (block.id === data.blockId) {
-                  const updatedBlock = { ...block };
-                  applyPatch(updatedBlock, data.patch);
-                  return updatedBlock;
-                }
-                return block;
-              });
-              return { ...msg, responseBlocks: updatedBlocks };
-            }
-            return msg;
-          }),
-        );
+      if (
+        data.type === 'block' &&
+        ((data.block.type === 'source' && data.block.data.length > 0) ||
+          data.block.type === 'text')
+      ) {
+        setMessageAppeared(true);
       }
 
       if (data.type === 'messageEnd') {

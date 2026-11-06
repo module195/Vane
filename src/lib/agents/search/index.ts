@@ -207,24 +207,9 @@ class SearchAgent {
 
         responseBlockId = block.id;
       } else {
-        // Providers end with an empty finish_reason chunk; it adds no text.
-        if (!chunk.contentChunk) continue;
-
-        const block = session.getBlock(responseBlockId) as TextBlock | null;
-
-        if (!block) {
-          continue;
-        }
-
-        block.data += chunk.contentChunk;
-
-        session.updateBlock(block.id, [
-          {
-            op: 'replace',
-            path: '/data',
-            value: block.data,
-          },
-        ]);
+        // Providers end with an empty finish_reason chunk; it adds no text,
+        // and appendBlockText skips it.
+        session.appendBlockText(responseBlockId, chunk.contentChunk);
       }
     }
 
