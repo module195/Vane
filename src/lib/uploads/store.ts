@@ -2,7 +2,6 @@ import BaseEmbedding from "../models/base/embedding";
 import UploadManager from "./manager";
 import computeSimilarity from "../utils/computeSimilarity";
 import { Chunk } from "../types";
-import { hashObj } from '../utils/hash';
 
 type UploadStoreParams = {
     embeddingModel: BaseEmbedding<any>;
@@ -59,50 +58,44 @@ class UploadStore {
         this.records = perFile.flat();
     }
 
+    /* Ranks every chunk for each query by cosine similarity, then fuses the
+       rankings with reciprocal-rank fusion: a chunk scores the sum over
+       queries of 1 / (k + rank), rank starting at 1, k = 60. A chunk is
+       identified by its file and text, so the same chunk found by several
+       queries is merged and its scores add up. */
     async query(queries: string[], topK: number): Promise<Chunk[]> {
         const queryEmbeddings = await this.embeddingModel.embedText(queries)
-
-        const results: { chunk: Chunk; score: number; }[][] = [];
-        const hashResults: string[][] = []
-
-        await Promise.all(queryEmbeddings.map(async (query) => {
-            const similarities = this.records.map((record, idx) => {
-                return {
-                    chunk: {
-                        content: record.content,
-                        metadata: {
-                            ...record.metadata,
-                            fileId: record.fileId,
-                        }
-                    },
-                    score: computeSimilarity(query, record.embedding)
-                } as { chunk: Chunk; score: number; };
-            }).sort((a, b) => b.score - a.score)
-
-            results.push(similarities)
-            hashResults.push(similarities.map(s => hashObj(s)))
-        }))
 
         const chunkMap: Map<string, Chunk> = new Map();
         const scoreMap: Map<string, number> = new Map();
         const k = 60;
 
-        for (let i = 0; i < results.length; i++) {
-            for (let j = 0; j < results[i].length; j++) {
-                const chunkHash = hashResults[i][j]
+        for (const query of queryEmbeddings) {
+            const ranked = this.records
+                .map((record) => ({ record, score: computeSimilarity(query, record.embedding) }))
+                .sort((a, b) => b.score - a.score)
 
-                chunkMap.set(chunkHash, results[i][j].chunk);
-                scoreMap.set(chunkHash, (scoreMap.get(chunkHash) || 0) + results[i][j].score / (j + 1 + k));
-            }
+            ranked.forEach(({ record }, rank) => {
+                const key = `${record.fileId}\u0000${record.content}`
+
+                if (!chunkMap.has(key)) {
+                    chunkMap.set(key, {
+                        content: record.content,
+                        metadata: {
+                            ...record.metadata,
+                            fileId: record.fileId,
+                        }
+                    });
+                }
+
+                scoreMap.set(key, (scoreMap.get(key) || 0) + 1 / (k + rank + 1));
+            })
         }
 
-        const finalResults = Array.from(scoreMap.entries())
+        return Array.from(scoreMap.entries())
             .sort((a, b) => b[1] - a[1])
-            .map(([chunkHash, _score]) => {
-                return chunkMap.get(chunkHash)!;
-            })
-
-        return finalResults.slice(0, topK);
+            .slice(0, topK)
+            .map(([key]) => chunkMap.get(key)!);
     }
 
     static async getFileData(fileIds: string[]): Promise<{ fileName: string; initialContent: string }[]> {
