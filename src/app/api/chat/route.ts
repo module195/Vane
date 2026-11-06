@@ -3,6 +3,7 @@ import ModelRegistry from '@/lib/models/registry';
 import { ModelWithProvider } from '@/lib/models/types';
 import SearchAgent from '@/lib/agents/search';
 import SessionManager from '@/lib/session';
+import { createSessionStream } from '@/lib/sessionStream';
 import { ChatTurnMessage } from '@/lib/types';
 import { SearchSources } from '@/lib/agents/search/types';
 import db from '@/lib/db';
@@ -152,72 +153,9 @@ export const POST = async (req: Request) => {
     const agent = new SearchAgent();
     const session = SessionManager.createSession();
 
-    const responseStream = new TransformStream();
-    const writer = responseStream.writable.getWriter();
-    const encoder = new TextEncoder();
-
-    const disconnect = session.subscribe((event: string, data: any) => {
-      if (event === 'data') {
-        if (data.type === 'block') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'block',
-                block: data.block,
-              }) + '\n',
-            ),
-          );
-        } else if (data.type === 'updateBlock') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'updateBlock',
-                blockId: data.blockId,
-                patch: data.patch,
-              }) + '\n',
-            ),
-          );
-        } else if (data.type === 'appendText') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'appendText',
-                blockId: data.blockId,
-                delta: data.delta,
-              }) + '\n',
-            ),
-          );
-        } else if (data.type === 'researchComplete') {
-          writer.write(
-            encoder.encode(
-              JSON.stringify({
-                type: 'researchComplete',
-              }) + '\n',
-            ),
-          );
-        }
-      } else if (event === 'end') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'messageEnd',
-            }) + '\n',
-          ),
-        );
-        writer.close().catch(() => undefined);
-        session.removeAllListeners();
-      } else if (event === 'error') {
-        writer.write(
-          encoder.encode(
-            JSON.stringify({
-              type: 'error',
-              data: data.data,
-            }) + '\n',
-          ),
-        );
-        writer.close().catch(() => undefined);
-        session.removeAllListeners();
-      }
+    const stream = createSessionStream(session, {
+      signal: req.signal,
+      onTerminal: () => session.removeAllListeners(),
     });
 
     agent.searchAsync(session, {
@@ -242,14 +180,7 @@ export const POST = async (req: Request) => {
       query: body.message.content,
     });
 
-    req.signal.addEventListener('abort', () => {
-      disconnect();
-      // The stream may already be closed by an 'end'/'error' event; closing a
-      // closed writer rejects, so swallow that to avoid an unhandled rejection.
-      writer.close().catch(() => undefined);
-    });
-
-    return new Response(responseStream.readable, {
+    return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         Connection: 'keep-alive',
