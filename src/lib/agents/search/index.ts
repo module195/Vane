@@ -290,6 +290,9 @@ class SearchAgent {
         and(
           eq(messages.chatId, input.chatId),
           eq(messages.messageId, input.messageId),
+          // A rewrite of this message may have started meanwhile (the
+          // suggestions run after answerEnd): never overwrite its row.
+          eq(messages.backendId, session.id),
         ),
       )
       .execute();
