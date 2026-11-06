@@ -49,7 +49,7 @@ const uploadsSearchAction: ResearchAction<typeof schema> = {
       ]);
     }
 
-    const uploadStore = new UploadStore({
+    const uploadStore = await UploadStore.create({
       embeddingModel: additionalConfig.embedding,
       fileIds: additionalConfig.fileIds,
     });

@@ -19,7 +19,6 @@ const getSpeedPrompt = (
 
   Today's date: ${today}
 
-  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations so act efficiently.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -84,6 +83,8 @@ const getSpeedPrompt = (
   </user_uploaded_files>`
       : ''
   }
+
+  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations so act efficiently.
   `;
 };
 
@@ -105,7 +106,6 @@ const getBalancedPrompt = (
 
   Today's date: ${today}
 
-  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations so act efficiently.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -186,6 +186,8 @@ const getBalancedPrompt = (
   </user_uploaded_files>`
       : ''
   }
+
+  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations so act efficiently.
   `;
 };
 
@@ -207,7 +209,6 @@ const getQualityPrompt = (
 
   Today's date: ${today}
 
-  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations. Use every iteration wisely to gather comprehensive information.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -318,19 +319,24 @@ const getQualityPrompt = (
   </user_uploaded_files>`
       : ''
   }
+
+  You are currently on iteration ${i + 1} of your research process and have ${maxIteration} total iterations. Use every iteration wisely to gather comprehensive information.
   `;
 };
 
-export const getResearcherPrompt = (
+/* The iteration counter is the only part that changes between iterations, so
+   each prompt ends with it: everything before stays byte-identical and
+   prefix caches (OpenAI, Gemini, llama.cpp/LM Studio, Ollama) can reuse it. */
+export const getResearcherPrompt = async (
   actionDesc: string,
   mode: 'speed' | 'balanced' | 'quality',
   i: number,
   maxIteration: number,
   fileIds: string[],
-) => {
+): Promise<string> => {
   let prompt = '';
 
-  const filesData = UploadStore.getFileData(fileIds);
+  const filesData = await UploadStore.getFileData(fileIds);
 
   const fileDesc = filesData
     .map(

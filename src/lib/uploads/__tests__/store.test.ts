@@ -19,7 +19,7 @@ vi.mock('@/lib/uploads/manager', async () => {
     default: {
       getFile: (id: string) =>
         files[id] ? { id, name: files[id].name } : null,
-      getFileChunks: (id: string) =>
+      getFileChunksCached: async (id: string) =>
         files[id].chunks.map((content) => ({
           content,
           embedding: embedDeterministic(content),
@@ -31,9 +31,9 @@ vi.mock('@/lib/uploads/manager', async () => {
 import UploadStore from '../store';
 
 describe('UploadStore.query', () => {
-  it('ranks chunks by reciprocal-rank fusion over the queries (current behavior)', async () => {
+  it('ranks chunks by reciprocal-rank fusion over the queries', async () => {
     const embedding = new FakeEmbedding();
-    const store = new UploadStore({ embeddingModel: embedding, fileIds: ['f1'] });
+    const store = await UploadStore.create({ embeddingModel: embedding, fileIds: ['f1'] });
 
     const results = await store.query(['rust', 'go concurrency'], 10);
 
@@ -45,35 +45,30 @@ describe('UploadStore.query', () => {
       url: 'file_id://f1',
       fileId: 'f1',
     });
-    // Documents the current behavior. hashObj passes the sorted top-level
-    // keys as the JSON.stringify replacer, which also filters nested keys,
-    // so a result hashes as {"chunk":{},"score":x}: only the score counts.
-    // Different chunks with the same score collapse into one entry, and the
-    // same chunk from two queries (different scores) is never fused.
-    // Here "rust memory safety", "web rust go" and "tokio async rust" all
-    // score 1/sqrt(3) for "rust" and collapse into the last one seen.
+    // Every chunk appears once; the same chunk found by both queries is
+    // fused (RRF sums 1/(60 + rank)). Before the fix, chunks were hashed with
+    // their score, so equal-score chunks collapsed into one and nothing fused.
     expect(results.map((r) => r.content)).toMatchInlineSnapshot(`
       [
-        "tokio async rust",
-        "go goroutines concurrency",
+        "rust memory safety",
         "web rust go",
+        "go goroutines concurrency",
         "tokio async rust",
       ]
     `);
   });
 
   it('respects topK', async () => {
-    const store = new UploadStore({
+    const store = await UploadStore.create({
       embeddingModel: new FakeEmbedding(),
       fileIds: ['f1'],
     });
     expect(await store.query(['rust'], 2)).toHaveLength(2);
   });
 
-  it('throws for an unknown file id', () => {
-    expect(
-      () =>
-        new UploadStore({ embeddingModel: new FakeEmbedding(), fileIds: ['x'] }),
-    ).toThrow('File with ID x not found');
+  it('throws for an unknown file id', async () => {
+    await expect(
+      UploadStore.create({ embeddingModel: new FakeEmbedding(), fileIds: ['x'] }),
+    ).rejects.toThrow('File with ID x not found');
   });
 });

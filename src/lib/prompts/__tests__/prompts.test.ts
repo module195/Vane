@@ -19,20 +19,26 @@ describe('prompts', () => {
     async (mode) => {
       const { getResearcherPrompt } = await import('../search/researcher');
       expect(
-        getResearcherPrompt('<tool name="x">desc</tool>', mode, 0, 6, []),
+        await getResearcherPrompt('<tool name="x">desc</tool>', mode, 0, 6, []),
       ).toMatchSnapshot();
     },
   );
 
-  it('researcher prompt changes between iterations (cache-relevant)', async () => {
-    const { getResearcherPrompt } = await import('../search/researcher');
-    const a = getResearcherPrompt('d', 'balanced', 0, 6, []);
-    const b = getResearcherPrompt('d', 'balanced', 1, 6, []);
-    let i = 0;
-    while (a[i] === b[i]) i++;
-    // The first difference sits in the opening lines (iteration counter).
-    expect(a.slice(0, i).split('\n').length).toBeLessThan(10);
-  });
+  it.each(['speed', 'balanced', 'quality'] as const)(
+    'researcher prompt (%s) keeps a byte-identical prefix across iterations (prefix cache)',
+    async (mode) => {
+      const { getResearcherPrompt } = await import('../search/researcher');
+      const files: string[] = [];
+      const a = await getResearcherPrompt('d', mode, 0, 6, files);
+      const b = await getResearcherPrompt('d', mode, 1, 6, files);
+      let i = 0;
+      while (a[i] === b[i]) i++;
+      // Before: the iteration counter sat in the opening lines and only
+      // ~420-450 chars (7-15%) were shared. Now only the last line differs.
+      expect(a.slice(i).trim().split('\n')).toHaveLength(1);
+      expect(i / a.length).toBeGreaterThan(0.95);
+    },
+  );
 
   it.each([
     ['speed', false],

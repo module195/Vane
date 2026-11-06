@@ -75,7 +75,7 @@ class Researcher {
     );
 
     for (let i = 0; i < maxIteration; i++) {
-      const researcherPrompt = getResearcherPrompt(
+      const researcherPrompt = await getResearcherPrompt(
         availableActionsDescription,
         input.config.mode,
         i,
