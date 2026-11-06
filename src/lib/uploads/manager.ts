@@ -111,10 +111,17 @@ class UploadManager {
 
     /* Parsed .content.json files, keyed by path and checked against mtime and
        size on every read, so a rewritten file is parsed again. Bounded by the
-       on-disk size of the cached files; least recently used go first. */
+       on-disk size of the cached files; least recently used go first. Parsed
+       embeddings take several times their JSON size in heap, so the default
+       is 64 MB on disk (UPLOADS_CACHE_MB to change, 0 to disable). */
     private static chunksCache = new Map<string, { mtimeMs: number; size: number; chunks: FileChunk[] }>();
     private static chunksCacheBytes = 0;
-    static chunksCacheMaxBytes = 256 * 1024 * 1024;
+    static chunksCacheMaxBytes = UploadManager.cacheLimitFromEnv();
+
+    private static cacheLimitFromEnv(): number {
+        const mb = Number(process.env.UPLOADS_CACHE_MB);
+        return (Number.isFinite(mb) && mb >= 0 ? mb : 64) * 1024 * 1024;
+    }
 
     /* Async, cached version of getFileChunks for the search path. The
        returned array is shared between callers and must not be mutated. */
