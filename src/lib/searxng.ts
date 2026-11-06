@@ -1,3 +1,4 @@
+import { CancelledError, isScopeAborted, withScopeSignal } from './abortScope';
 import { getSearxngURL } from './config/serverRegistry';
 import { SearchHttpError, parseRetryAfter } from './searchErrors';
 
@@ -46,7 +47,7 @@ export const searchSearxng = async (
 
   try {
     const res = await fetch(url, {
-      signal: controller.signal,
+      signal: withScopeSignal(controller.signal),
       headers: {
         // SearXNG's default botdetection rejects requests that do not identify
         // an origin IP. Server-side searches from Vane do not have a browser
@@ -71,6 +72,8 @@ export const searchSearxng = async (
 
     return { results, suggestions };
   } catch (err: any) {
+    // The answer was cancelled: not a timeout, so not retried either.
+    if (isScopeAborted()) throw new CancelledError();
     if (err.name === 'AbortError') {
       throw new Error('SearXNG search timed out');
     }

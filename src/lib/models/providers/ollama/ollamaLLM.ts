@@ -12,6 +12,7 @@ import { parse } from 'partial-json';
 import crypto from 'crypto';
 import { Message } from '@/lib/types';
 import { repairJson } from '@toolsycc/json-repair';
+import { scopedFetch } from '@/lib/abortScope';
 
 type OllamaConfig = {
   baseURL: string;
@@ -48,6 +49,8 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
 
     this.ollamaClient = new Ollama({
       host: this.config.baseURL || 'http://localhost:11434',
+      // Aborts every request with the chat answer (lib/abortScope.ts).
+      fetch: scopedFetch,
     });
   }
 

@@ -151,7 +151,14 @@ export const POST = async (req: Request) => {
     });
 
     const agent = new SearchAgent();
+    // A rewrite replaces the answer still running for this message
+    // (e.g. its suggestions): stop the old one first.
+    SessionManager.getSessionForMessage(
+      body.message.chatId,
+      body.message.messageId,
+    )?.cancel();
     const session = SessionManager.createSession();
+    session.bindMessage(body.message.chatId, body.message.messageId);
 
     const stream = createSessionStream(session, {
       signal: req.signal,

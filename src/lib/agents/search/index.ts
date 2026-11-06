@@ -10,12 +10,30 @@ import { messages } from '@/lib/db/schema';
 import { and, eq, gt } from 'drizzle-orm';
 import { Message, TextBlock } from '@/lib/types';
 import { getTokenCount } from '@/lib/utils/splitText';
+import {
+  isScopeAborted,
+  runWithAbortSignal,
+  throwIfScopeAborted,
+} from '@/lib/abortScope';
+import generateSuggestions from '@/lib/agents/suggestions';
 
 class SearchAgent {
+  /* Runs under the session's abort signal: LLM calls, searches and page
+     downloads started by any stage stop when the session is cancelled. */
   async searchAsync(session: SessionManager, input: SearchAgentInput) {
+    return runWithAbortSignal(session.signal, () =>
+      this.runSearch(session, input),
+    );
+  }
+
+  private async runSearch(session: SessionManager, input: SearchAgentInput) {
     try {
       await this._searchAsync(session, input);
     } catch (err) {
+      if (session.signal?.aborted) {
+        await this.saveCancelled(session, input);
+        return;
+      }
       console.error('SearchAgent error:', err);
       session.emit('error', {
         data:
@@ -25,6 +43,36 @@ class SearchAgent {
       });
       await this.saveFailure(session, input);
     }
+  }
+
+  /* The user stopped the answer (or nobody listened for a long time):
+     end the stream normally and keep what was produced so far, under the
+     existing 'completed' status (no new status, no schema change). */
+  private async saveCancelled(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ) {
+    try {
+      await db
+        .update(messages)
+        .set({
+          status: 'completed',
+          responseBlocks: session.getAllBlocks(),
+        })
+        .where(
+          and(
+            eq(messages.chatId, input.chatId),
+            eq(messages.messageId, input.messageId),
+            // A rewrite cancels this session and takes over the row.
+            eq(messages.backendId, session.id),
+          ),
+        )
+        .execute();
+    } catch (dbErr) {
+      console.error('SearchAgent: failed to save cancelled answer:', dbErr);
+    }
+    // After the write, so a client that refetches on messageEnd sees it.
+    session.emit('end', {});
   }
 
   /* Persists the error status and the blocks produced so far, so a failed
@@ -41,6 +89,7 @@ class SearchAgent {
           and(
             eq(messages.chatId, input.chatId),
             eq(messages.messageId, input.messageId),
+            eq(messages.backendId, session.id),
           ),
         )
         .execute();
@@ -96,6 +145,8 @@ class SearchAgent {
       query: input.followUp,
       llm: input.config.llm,
     });
+
+    throwIfScopeAborted();
 
     const widgetPromise = WidgetExecutor.executeAll({
       classification,
@@ -196,6 +247,8 @@ class SearchAgent {
     let responseBlockId = '';
 
     for await (const chunk of answerStream) {
+      // Leaving the loop closes the provider's stream as well.
+      throwIfScopeAborted();
       if (!responseBlockId) {
         const block: TextBlock = {
           id: crypto.randomUUID(),
@@ -213,8 +266,31 @@ class SearchAgent {
       }
     }
 
-    session.emit('end', {});
+    throwIfScopeAborted();
 
+    // The answer is done: the client stops loading now, while the
+    // follow-up suggestions are generated on the same stream.
+    session.emit('data', { type: 'answerEnd' });
+
+    // The answer is already on screen: a failure from here on (saving,
+    // suggestions) must not turn it into an error for the client.
+    try {
+      await this.saveCompleted(session, input);
+
+      if (await this.emitSuggestions(session, input)) {
+        await this.saveCompleted(session, input);
+      }
+    } catch (err) {
+      console.error('SearchAgent: failed after the answer ended:', err);
+    }
+
+    session.emit('end', {});
+  }
+
+  private async saveCompleted(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ) {
     await db
       .update(messages)
       .set({
@@ -225,9 +301,56 @@ class SearchAgent {
         and(
           eq(messages.chatId, input.chatId),
           eq(messages.messageId, input.messageId),
+          // A rewrite of this message may have started meanwhile (the
+          // suggestions run after answerEnd): never overwrite its row.
+          eq(messages.backendId, session.id),
         ),
       )
       .execute();
+  }
+
+  /* Follow-up suggestions, generated right after the writer instead of
+     by a second request the client made after messageEnd (one HTTP round
+     trip and one model-list lookup earlier). Same rule and same input as
+     before: only when the answer has sources, from the chat history plus
+     this question and answer. They need the final answer, so they cannot
+     run alongside the writer. A failure sends an empty list (no retry from
+     the client); returns whether a suggestion block was emitted. */
+  private async emitSuggestions(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ): Promise<boolean> {
+    const blocks = session.getAllBlocks();
+    const hasSources = blocks.some(
+      (b) => b.type === 'source' && b.data.length > 0,
+    );
+    if (!hasSources) return false;
+
+    const answer = blocks.find((b) => b.type === 'text')?.data || '';
+
+    let suggestions: string[] = [];
+    try {
+      suggestions = await generateSuggestions(
+        {
+          chatHistory: [
+            ...input.chatHistory,
+            { role: 'user', content: input.followUp },
+            { role: 'assistant', content: answer },
+          ],
+        },
+        input.config.llm,
+      );
+    } catch (err) {
+      if (isScopeAborted()) return false;
+      console.error('SearchAgent: failed to generate suggestions:', err);
+    }
+
+    session.emitBlock({
+      id: crypto.randomUUID(),
+      type: 'suggestion',
+      data: Array.isArray(suggestions) ? suggestions : [],
+    });
+    return true;
   }
 }
 
