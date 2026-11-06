@@ -171,7 +171,6 @@ exports[`prompts > researcher (balanced) 1`] = `
 
   Today's date: January 2, 2026
 
-  You are currently on iteration 1 of your research process and have 6 total iterations so act efficiently.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -244,6 +243,8 @@ exports[`prompts > researcher (balanced) 1`] = `
   </response_protocol>
 
   
+
+  You are currently on iteration 1 of your research process and have 6 total iterations so act efficiently.
   "
 `;
 
@@ -254,7 +255,6 @@ exports[`prompts > researcher (quality) 1`] = `
 
   Today's date: January 2, 2026
 
-  You are currently on iteration 1 of your research process and have 6 total iterations. Use every iteration wisely to gather comprehensive information.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -357,6 +357,8 @@ exports[`prompts > researcher (quality) 1`] = `
   </response_protocol>
 
   
+
+  You are currently on iteration 1 of your research process and have 6 total iterations. Use every iteration wisely to gather comprehensive information.
   "
 `;
 
@@ -367,7 +369,6 @@ exports[`prompts > researcher (speed) 1`] = `
 
   Today's date: January 2, 2026
 
-  You are currently on iteration 1 of your research process and have 6 total iterations so act efficiently.
   When you are finished, you must call the \`done\` tool. Never output text directly.
 
   <goal>
@@ -424,6 +425,8 @@ exports[`prompts > researcher (speed) 1`] = `
   </response_protocol>
 
   
+
+  You are currently on iteration 1 of your research process and have 6 total iterations so act efficiently.
   "
 `;
 
