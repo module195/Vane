@@ -15,6 +15,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { getSuggestions } from '../actions';
 import { openReconnectStream } from './reconnectStream';
+import { readNdjsonStream } from './ndjson';
 import { MinimalProvider } from '../models/types';
 import { getAutoMediaSearch } from '../config/clientRegistry';
 import { applyPatch } from 'rfc6902';
@@ -391,32 +392,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        const reader = body.getReader();
-        const decoder = new TextDecoder('utf-8');
-
-        let partialChunk = '';
-
         const messageHandler = getMessageHandler(lastMsg);
 
         try {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            partialChunk += decoder.decode(value, { stream: true });
-
-            try {
-              const messages = partialChunk.split('\n');
-              for (const msg of messages) {
-                if (!msg.trim()) continue;
-                const json = JSON.parse(msg);
-                messageHandler(json);
-              }
-              partialChunk = '';
-            } catch (error) {
-              console.warn('Incomplete JSON, waiting for next chunk...');
-            }
-          }
+          await readNdjsonStream(body, messageHandler);
         } finally {
           isReconnectingRef.current = false;
         }
@@ -742,31 +721,9 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (!res.body) throw new Error('No response body');
 
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    let partialChunk = '';
-
     const messageHandler = getMessageHandler(newMessage);
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      partialChunk += decoder.decode(value, { stream: true });
-
-      try {
-        const messages = partialChunk.split('\n');
-        for (const msg of messages) {
-          if (!msg.trim()) continue;
-          const json = JSON.parse(msg);
-          messageHandler(json);
-        }
-        partialChunk = '';
-      } catch (error) {
-        console.warn('Incomplete JSON, waiting for next chunk...');
-      }
-    }
+    await readNdjsonStream(res.body, messageHandler);
   };
 
   return (
