@@ -333,3 +333,38 @@ describe('sondagem da configuração', () => {
     expect(f.map((x) => x.title)).toEqual(['SearXNG recusa o formato JSON']);
   });
 });
+
+/* G1-01: with LM Studio returning all-zero vectors, every result scored the
+   same and the ranking had no signal for weeks without anyone noticing. */
+describe('embeddings sem sinal', () => {
+  const q = (simMin: number, simMax: number, results = 5) => ({
+    type: 'search_query' as const,
+    mode: 'balanced',
+    results,
+    kept: results,
+    fallback: false,
+    simMin,
+    simMedian: simMin,
+    simMax,
+  });
+  const flat = 'Os embeddings não distinguem os resultados';
+
+  it('acusa quando todas as consultas têm similaridade igual em todos os resultados', () => {
+    const r = [
+      result({ id: 'a', events: [q(0, 0), q(0, 0)] }),
+      result({ id: 'b', events: [q(0.5, 0.5)] }),
+    ];
+    const f = analyze(r).findings.find((x) => x.title === flat);
+    expect(f?.severity).toBe('bug');
+    expect(f?.cases).toEqual(['a', 'b']);
+    expect(titles(r)).not.toContain('Nenhum bug encontrado');
+  });
+
+  it('não acusa quando alguma consulta separa os resultados, ou sem dados', () => {
+    expect(
+      titles([result({ events: [q(0, 0), q(0.31, 0.82)] })]),
+    ).not.toContain(flat);
+    expect(titles([result({ events: [q(0.4, 0.4, 1)] })])).not.toContain(flat);
+    expect(titles([result({})])).not.toContain(flat);
+  });
+});
