@@ -191,6 +191,56 @@ describe('executeSearch with filters, dates and the result budget', () => {
     expect(undated[0].metadata).not.toHaveProperty('publishedDate');
   });
 
+  /* Characterization (Phase 5): what happens today when a site: filter
+     brings back little. The retry drops the filter, so results from other
+     sites reach the writer and nothing tells the user. This is the gap of
+     G1-20 (perf-audit/improvements.md); the fix will flip the last two
+     expectations, and the test goes with it. */
+  it('a weak filtered search is redone without the domain (known gap G1-20)', async () => {
+    searxngMock.mockImplementation(async (q: string) => ({
+      results: q.includes('site:embrapa.br')
+        ? [
+            {
+              title: 'a',
+              url: 'https://www.embrapa.br/a',
+              content: 'compostagem rust',
+            },
+          ]
+        : [
+            {
+              title: 'a',
+              url: 'https://www.embrapa.br/a',
+              content: 'compostagem rust',
+            },
+            {
+              title: 'b',
+              url: 'https://blog.test/b',
+              content: 'compostagem go',
+            },
+            {
+              title: 'c',
+              url: 'https://outro.test/c',
+              content: 'compostagem web',
+            },
+          ],
+      suggestions: [],
+    }));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const results = await run(['compostagem'], {
+      filters: parseSearchFilters({ domains: ['embrapa.br'] }),
+    });
+    log.mockRestore();
+
+    expect(searxngMock.mock.calls.map((c) => c[0])).toEqual([
+      'compostagem site:embrapa.br',
+      'compostagem',
+    ]);
+    const urls = results.map((r) => r.metadata.url);
+    expect(urls[0]).toBe('https://www.embrapa.br/a');
+    expect(urls).toContain('https://blog.test/b');
+    expect(urls).toContain('https://outro.test/c');
+  });
+
   it('splits the result budget across the queries', async () => {
     searxngMock.mockImplementation(async (q: string) => ({
       results: Array.from({ length: 25 }, (_, i) => ({
