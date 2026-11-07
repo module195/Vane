@@ -50,6 +50,20 @@ type OpenAIConfig = {
   defaultHeaders?: Record<string, string>;
 };
 
+/* A model can return tool-call arguments that are not valid JSON. Use an
+   empty object so the action's own argument guard answers the model,
+   instead of failing the whole request. The arguments are not logged. */
+const parseToolArguments = (name: string, raw: string) => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    console.warn(
+      `[llm] tool call "${name}" had arguments that are not valid JSON; using {}`,
+    );
+    return {};
+  }
+};
+
 class OpenAILLM extends BaseLLM<OpenAIConfig> {
   openAIClient: OpenAI;
 
@@ -141,7 +155,10 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
                 return {
                   name: tc.function.name,
                   id: tc.id,
-                  arguments: JSON.parse(tc.function.arguments),
+                  arguments: parseToolArguments(
+                    tc.function.name,
+                    tc.function.arguments,
+                  ),
                 };
               }
             })
