@@ -7,6 +7,7 @@ import { PDFParse } from 'pdf-parse';
 import { CanvasFactory } from 'pdf-parse/worker';
 import officeParser from 'officeparser'
 import { resolveUploadsDirs } from "./paths";
+import { withEmbeddingSlot } from "../models/utils/embeddingLimiter";
 
 const supportedMimeTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'] as const
 
@@ -14,6 +15,29 @@ type SupportedMimeType = typeof supportedMimeTypes[number];
 
 type UploadManagerParams = {
     embeddingModel: BaseEmbedding<any>;
+    /** Which model made the embeddings, recorded with the chunks. */
+    embeddingModelInfo?: { providerId: string; key: string };
+}
+
+/** Chunks per embedding request when indexing an upload. */
+export const UPLOAD_EMBED_BATCH = 32;
+
+const extractText = async (filePath: string, fileType: SupportedMimeType): Promise<string> => {
+    switch (fileType) {
+        case 'text/plain':
+            return fs.readFileSync(filePath, 'utf-8');
+        case 'application/pdf': {
+            const parser = new PDFParse({
+                data: fs.readFileSync(filePath),
+                CanvasFactory
+            })
+            return parser.getText().then(res => res.text);
+        }
+        case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            return (await officeParser.parseOffice(fs.readFileSync(filePath))).toText();
+        default:
+            throw new Error(`Unsupported file type: ${fileType}`);
+    }
 }
 
 type RecordedFile = {
@@ -107,92 +131,53 @@ class UploadManager {
         }
     }
 
+    /** Extracts the text of an uploaded file, embeds it and writes the
+     *  chunks (with the embedding model used) next to the file. */
     private async extractContentAndEmbed(filePath: string, fileType: SupportedMimeType): Promise<string> {
-        switch (fileType) {
-            case 'text/plain':
-                const content = fs.readFileSync(filePath, 'utf-8');
+        const text = await extractText(filePath, fileType);
+        const chunks = splitText(text, 512, 128);
+        const embeddings = await this.embedInBatches(chunks);
 
-                const splittedText = splitText(content, 512, 128)
-                const embeddings = await this.embeddingModel.embedText(splittedText)
-
-                if (embeddings.length !== splittedText.length) {
-                    throw new Error('Embeddings and text chunks length mismatch');
-                }
-
-                const contentPath = filePath.split('.').slice(0, -1).join('.') + '.content.json';
-
-                const data = {
-                    chunks: splittedText.map((text, i) => {
-                        return {
-                            content: text,
-                            embedding: embeddings[i],
-                        }
-                    })
-                }
-
-                fs.writeFileSync(contentPath, JSON.stringify(data, null, 2));
-
-                return contentPath;
-            case 'application/pdf':
-                const pdfBuffer = fs.readFileSync(filePath);
-
-                const parser = new PDFParse({
-                    data: pdfBuffer,
-                    CanvasFactory
-                })
-
-                const pdfText = await parser.getText().then(res => res.text)
-
-                const pdfSplittedText = splitText(pdfText, 512, 128)
-                const pdfEmbeddings = await this.embeddingModel.embedText(pdfSplittedText)
-
-                if (pdfEmbeddings.length !== pdfSplittedText.length) {
-                    throw new Error('Embeddings and text chunks length mismatch');
-                }
-
-                const pdfContentPath = filePath.split('.').slice(0, -1).join('.') + '.content.json';
-
-                const pdfData = {
-                    chunks: pdfSplittedText.map((text, i) => {
-                        return {
-                            content: text,
-                            embedding: pdfEmbeddings[i],
-                        }
-                    })
-                }
-
-                fs.writeFileSync(pdfContentPath, JSON.stringify(pdfData, null, 2));
-
-                return pdfContentPath;
-            case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                const docBuffer = fs.readFileSync(filePath);
-
-                const docText = (await officeParser.parseOffice(docBuffer)).toText()
-
-                const docSplittedText = splitText(docText, 512, 128)
-                const docEmbeddings = await this.embeddingModel.embedText(docSplittedText)
-
-                if (docEmbeddings.length !== docSplittedText.length) {
-                    throw new Error('Embeddings and text chunks length mismatch');
-                }
-
-                const docContentPath = filePath.split('.').slice(0, -1).join('.') + '.content.json';
-
-                const docData = {
-                    chunks: docSplittedText.map((text, i) => {
-                        return {
-                            content: text,
-                            embedding: docEmbeddings[i],
-                        }
-                    })
-                }
-
-                fs.writeFileSync(docContentPath, JSON.stringify(docData, null, 2));
-
-                return docContentPath;
-            default:
-                throw new Error(`Unsupported file type: ${fileType}`);
+        if (embeddings.length !== chunks.length) {
+            throw new Error('Embeddings and text chunks length mismatch');
         }
+
+        const contentPath = filePath.split('.').slice(0, -1).join('.') + '.content.json';
+
+        const data = {
+            // Recorded so a search can tell uploads made with another
+            // embedding model apart (G1-16). Older files do not have it.
+            embeddingModel: {
+                ...this.params.embeddingModelInfo,
+                dims: embeddings[0]?.length ?? 0,
+            },
+            chunks: chunks.map((content, i) => ({
+                content,
+                embedding: embeddings[i],
+            })),
+        };
+
+        fs.writeFileSync(contentPath, JSON.stringify(data, null, 2));
+
+        return contentPath;
+    }
+
+    /* A large file used to go out as one request with every chunk, which a
+       local server (Ollama, LM Studio) answers with 500/502 or a timeout,
+       and outside the limiter the searches share. Batches keep the order. */
+    private async embedInBatches(chunks: string[]): Promise<number[][]> {
+        const batches: string[][] = [];
+        for (let i = 0; i < chunks.length; i += UPLOAD_EMBED_BATCH) {
+            batches.push(chunks.slice(i, i + UPLOAD_EMBED_BATCH));
+        }
+
+        const results = await Promise.all(
+            batches.map((batch) =>
+                withEmbeddingSlot(() => this.embeddingModel.embedText(batch)),
+            ),
+        );
+
+        return results.flat();
     }
 
     async processFiles(files: File[]): Promise<FileRes[]> {

@@ -23,6 +23,10 @@ export async function POST(req: Request) {
     
     const uploadManager = new UploadManager({
       embeddingModel: model,
+      embeddingModelInfo: {
+        providerId: embeddingModelProvider,
+        key: embeddingModel,
+      },
     })
 
     const processedFiles = await uploadManager.processFiles(files);

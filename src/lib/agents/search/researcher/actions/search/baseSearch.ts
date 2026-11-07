@@ -10,6 +10,11 @@ import z from 'zod';
 import Scraper from '@/lib/scraper';
 import { splitText } from '@/lib/utils/splitText';
 import { createLimiter } from '@/lib/utils/limit';
+import {
+  EMBEDDING_CONCURRENCY,
+  EMBEDDING_TIMEOUT_MS,
+  withEmbeddingSlot,
+} from '@/lib/models/utils/embeddingLimiter';
 import { normalizeUrl } from '@/lib/utils/normalizeUrl';
 import {
   SearchFilters,
@@ -53,20 +58,8 @@ export const toIsoDate = (raw: unknown): string | undefined => {
   return d.toISOString().slice(0, 10);
 };
 
-/**
- * Embedding requests allowed in flight at once, across every search in
- * the process. Parallel search actions used to fire one request per query
- * at the same time, and a local server (Ollama) answers 502 when flooded
- * (upstream issue #1147). Three keeps one action's queries (at most
- * three) fully parallel.
- */
-export const EMBEDDING_CONCURRENCY = 3;
-/** A request still pending after this frees its slot (and fails) so one
- *  hung embedding server call cannot block every later search. */
-export const EMBEDDING_TIMEOUT_MS = 120_000;
-const withEmbeddingSlot = createLimiter(EMBEDDING_CONCURRENCY, {
-  timeoutMs: EMBEDDING_TIMEOUT_MS,
-});
+/* Moved to models/utils/embeddingLimiter so uploads share the same slots. */
+export { EMBEDDING_CONCURRENCY, EMBEDDING_TIMEOUT_MS };
 
 /** Results scoring at or below this (cosine) against the query are dropped. */
 const SIMILARITY_THRESHOLD = 0.5;
