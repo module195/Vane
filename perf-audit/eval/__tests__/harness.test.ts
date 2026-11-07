@@ -144,6 +144,30 @@ describe('verificações automáticas', () => {
     ).toEqual(['citacoes-validas', 'mesmo-idioma', 'sem-titulo-principal']);
   });
 
+  it('reprova página que falhou na leitura usada como fonte', () => {
+    expect(
+      failed(
+        rec({
+          sources: [
+            {
+              title: 'Failed to scrape',
+              url: 'https://a.test/',
+              content: '# https://a.test/\n\nError scraping content.',
+            },
+          ],
+        }),
+      ),
+    ).toEqual(['sem-fonte-de-erro']);
+  });
+
+  it('reprova vetor de embedding no stream ou no banco (caminho do chat)', () => {
+    const leaks = { embeddingInStream: false, embeddingInDb: false };
+    expect(failed(rec({ leaks }))).toEqual([]);
+    expect(failed(rec({ leaks: { ...leaks, embeddingInDb: true } }))).toEqual([
+      'sem-vetores-nos-blocos',
+    ]);
+  });
+
   it('reprova citação quando a busca foi pulada', () => {
     expect(
       failed(

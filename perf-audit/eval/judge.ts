@@ -33,7 +33,7 @@ const get = (n: string) => {
 const loadRun = (label: string): EvalRecord[] =>
   fs
     .readdirSync(path.join(RUNS, label))
-    .filter((f) => /^[A-F]\d\d\.(speed|balanced|quality)\.json$/.test(f))
+    .filter((f) => /^[A-G]\d\d\.(speed|balanced|quality)\.json$/.test(f))
     .sort()
     .map((f) =>
       JSON.parse(fs.readFileSync(path.join(RUNS, label, f), 'utf-8')),
@@ -95,6 +95,23 @@ const main = async () => {
 
   const scores: any[] = [];
   for (const rec of loadRun(runLabel)) {
+    /* As in search_evals: a failed answer scores zero instead of dropping
+       out of the average, and is flagged so it is easy to find. */
+    if (rec.error || !visibleAnswer(rec.answer)) {
+      scores.push({
+        id: rec.id,
+        mode: rec.mode,
+        failed: true,
+        relevance: 0,
+        grounding: 0,
+        completeness: 0,
+        citationFormat: 0,
+        claims: [],
+        notes: `falhou: ${(rec.error ?? 'resposta vazia').slice(0, 200)}`,
+      });
+      console.log(rec.id, rec.mode, 'FALHOU (nota 0)');
+      continue;
+    }
     const answer = visibleAnswer(rec.answer);
     const points = keypoints[rec.id] ?? [];
     const grade = await judge.ask<any>(

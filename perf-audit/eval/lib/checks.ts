@@ -9,6 +9,9 @@ export type EvalRecord = {
   answer: string;
   sources: { title?: string; url?: string; content: string }[];
   error?: string;
+  /** Chat path only: whether any streamed or saved block carried an
+      embedding vector (see baseSearch.ts, G1-03 in improvements.md). */
+  leaks?: { embeddingInStream: boolean; embeddingInDb: boolean };
 };
 
 export type CheckResult = { name: string; pass: boolean; detail?: string };
@@ -112,6 +115,32 @@ export const runChecks = (
       name: 'mesmo-idioma',
       pass: aLang === qLang,
       detail: `pergunta=${qLang} resposta=${aLang}`,
+    });
+  }
+
+  /* A page the scraper could not read comes back as this placeholder;
+     it must never reach the answer as a citable source. */
+  const failed = rec.sources.filter(
+    (s) =>
+      s.title === 'Failed to scrape' ||
+      /^# \S+\n\nError scraping content\.$/.test(s.content ?? ''),
+  );
+  results.push({
+    name: 'sem-fonte-de-erro',
+    pass: failed.length === 0,
+    detail: failed.length
+      ? failed.map((s) => s.url ?? '?').join(', ')
+      : undefined,
+  });
+
+  if (rec.leaks) {
+    const leak = rec.leaks.embeddingInStream || rec.leaks.embeddingInDb;
+    results.push({
+      name: 'sem-vetores-nos-blocos',
+      pass: !leak,
+      detail: leak
+        ? `stream=${rec.leaks.embeddingInStream} banco=${rec.leaks.embeddingInDb}`
+        : undefined,
     });
   }
 

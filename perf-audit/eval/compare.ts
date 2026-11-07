@@ -78,6 +78,43 @@ for (const mode of MODES) {
   }
 }
 
+/* Cost next to quality, as search_evals reports it. Informational: the
+   gate on cost is judged against the noise between the reference runs. */
+lines.push(
+  '',
+  '## Custo e latência por modo (médias)',
+  '',
+  '| Modo | Métrica | Referência | Nova | Diferença |',
+  '| --- | --- | --- | --- | --- |',
+);
+const COST: [string, (r: any) => number | null | undefined][] = [
+  ['tempo total (ms)', (r) => r.timing?.totalMs],
+  ['1º token (ms)', (r) => r.timing?.firstTokenMs],
+  ['tokens de entrada', (r) => r.tokens?.promptTokens],
+  ['tokens de saída', (r) => r.tokens?.completionTokens],
+  ['tokens de raciocínio', (r) => r.tokens?.reasoningTokens],
+  ['chamadas de LLM', (r) => r.llmCalls?.count],
+];
+for (const mode of MODES) {
+  const keys = runScores
+    .filter((s) => s.mode === mode && refByKey.has(key(s)))
+    .map(key);
+  if (!keys.length) continue;
+  for (const [name, get] of COST) {
+    const vals = (label: string) =>
+      keys
+        .map((k) => get(record(label, k) ?? {}))
+        .filter((v): v is number => typeof v === 'number');
+    const a = mean(vals(refLabel));
+    const b = mean(vals(runLabel));
+    if (Number.isNaN(a) && Number.isNaN(b)) continue;
+    const pct = a ? ((b - a) / a) * 100 : NaN;
+    lines.push(
+      `| ${mode} | ${name} | ${fmt(a)} | ${fmt(b)} | ${Number.isNaN(pct) ? '-' : `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`} |`,
+    );
+  }
+}
+
 const review: string[] = [];
 lines.push('', '## Perguntas com queda', '');
 for (const s of runScores) {
