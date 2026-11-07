@@ -1,9 +1,15 @@
 import OpenAILLM from '../openai/openaiLLM';
+import { StructuredReasoning } from '../../utils/reasoningControl';
+import { localServerReasoning } from './reasoning';
 
 const LOOKUP_TIMEOUT_MS = 3000;
 
 class LMStudioLLM extends OpenAILLM {
   private contextWindowLookup?: Promise<number | undefined>;
+
+  protected structuredReasoningRequest(mode: StructuredReasoning) {
+    return localServerReasoning(this.config.model, mode);
+  }
 
   /**
    * Asks LM Studio's REST API (`/api/v0/models/{model}`) for the context

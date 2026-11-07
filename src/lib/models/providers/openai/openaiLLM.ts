@@ -25,6 +25,14 @@ import {
   objectMaxTokens,
   objectTemperature,
 } from '../../utils/objectDefaults';
+import {
+  appendNoThink,
+  isBadRequest,
+  NO_REASONING_CHANGE,
+  ReasoningRequest,
+  StructuredReasoning,
+  structuredReasoning,
+} from '../../utils/reasoningControl';
 import { isUsageTracked, reportUsage } from '@/lib/trace';
 
 /* Usage as OpenAI-compatible servers report it. reasoning_tokens is OpenAI's
@@ -66,6 +74,25 @@ const parseToolArguments = (name: string, raw: string) => {
 
 class OpenAILLM extends BaseLLM<OpenAIConfig> {
   openAIClient: OpenAI;
+  /* Set when the server rejected the reasoning parameters with a 400. */
+  private reasoningParamsRejected = false;
+
+  /**
+   * How this provider asks for LLM_STRUCTURED_REASONING in generateObject.
+   * OpenAI itself: only its reasoning models take reasoning_effort; gpt-5
+   * accepts "minimal", the o-series "low" at the least.
+   */
+  protected structuredReasoningRequest(
+    mode: StructuredReasoning,
+  ): ReasoningRequest {
+    if (mode === 'default' || !isOpenAIReasoningModel(this.config.model)) {
+      return NO_REASONING_CHANGE;
+    }
+    const gpt5 = /gpt-5/i.test(this.config.model);
+    return {
+      params: { reasoning_effort: mode === 'off' && gpt5 ? 'minimal' : 'low' },
+    };
+  }
 
   constructor(protected config: OpenAIConfig) {
     super(config);
@@ -265,10 +292,13 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
     const maxTokens =
       input.options?.maxTokens ?? this.config.options?.maxTokens;
 
-    /* create, not parse: the SDK's parse() runs JSON.parse on the raw content
-       and throws on fenced JSON before parseModelJson can clean it up. */
-    const response = await this.openAIClient.chat.completions.create({
-      messages: this.convertToOpenAIMessages(input.messages),
+    const extra = this.reasoningParamsRejected
+      ? NO_REASONING_CHANGE
+      : this.structuredReasoningRequest(structuredReasoning());
+    const changesRequest =
+      Object.keys(extra.params).length > 0 || extra.noThink;
+
+    const base = {
       model: this.config.model,
       temperature:
         input.options?.temperature ??
@@ -287,7 +317,30 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
       presence_penalty:
         input.options?.presencePenalty ?? this.config.options?.presencePenalty,
       response_format: zodResponseFormat(input.schema, 'object'),
-    });
+    };
+
+    /* create, not parse: the SDK's parse() runs JSON.parse on the raw content
+       and throws on fenced JSON before parseModelJson can clean it up. */
+    const request = (r: ReasoningRequest) =>
+      this.openAIClient.chat.completions.create({
+        ...base,
+        ...r.params,
+        messages: this.convertToOpenAIMessages(
+          r.noThink ? appendNoThink(input.messages) : input.messages,
+        ),
+      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+
+    let response: OpenAI.Chat.Completions.ChatCompletion;
+    try {
+      response = await request(extra);
+    } catch (err) {
+      if (!changesRequest || !isBadRequest(err)) throw err;
+      response = await request(NO_REASONING_CHANGE);
+      this.reasoningParamsRejected = true;
+      console.warn(
+        `[llm] ${this.config.model} rejected the reasoning parameters; sending structured calls without them`,
+      );
+    }
 
     const reasoningChars = reasoningOf(response.choices?.[0]?.message).length;
     reportUsage({
