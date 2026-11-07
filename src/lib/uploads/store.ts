@@ -56,8 +56,18 @@ class UploadStore {
         const results: { chunk: Chunk; score: number; }[][] = [];
         const hashResults: string[][] = []
 
+        // Chunks embedded earlier with another model have another dimension
+        // and cannot be compared; skip them instead of failing the search.
+        const dim = queryEmbeddings[0]?.length ?? 0;
+        const records = this.records.filter((r) => r.embedding.length === dim);
+        if (records.length < this.records.length) {
+            console.warn(
+                `[uploads] skipped ${this.records.length - records.length} of ${this.records.length} chunks: embedding dimension differs from the current model (${dim}); re-upload the files to search them`,
+            );
+        }
+
         await Promise.all(queryEmbeddings.map(async (query) => {
-            const similarities = this.records.map((record, idx) => {
+            const similarities = records.map((record) => {
                 return {
                     chunk: {
                         content: record.content,
