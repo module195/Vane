@@ -27,6 +27,18 @@ export const POST = async (req: Request) => {
       );
     }
 
+    const missingModel = (['chatModel', 'embeddingModel'] as const).find(
+      (k) => !body[k]?.providerId || !body[k]?.key,
+    );
+    if (missingModel) {
+      return Response.json(
+        {
+          message: `Missing ${missingModel}.providerId or ${missingModel}.key`,
+        },
+        { status: 400 },
+      );
+    }
+
     body.history = body.history || [];
     body.optimizationMode = body.optimizationMode || 'speed';
     body.stream = body.stream || false;

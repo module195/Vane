@@ -116,4 +116,17 @@ describe('POST /api/search', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  /* Upstream #1170: without chatModel or embeddingModel the route read
+     body.chatModel.providerId, threw a TypeError and answered 500. */
+  it.each([
+    ['chatModel', { chatModel: undefined }],
+    ['embeddingModel', { embeddingModel: undefined }],
+    ['chatModel without key', { chatModel: { providerId: 'p' } }],
+    ['embeddingModel without providerId', { embeddingModel: { key: 'e' } }],
+  ])('answers 400 when %s is missing', async (_name, extra) => {
+    const res = await POST(body(extra));
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/chatModel|embeddingModel/);
+  });
 });
