@@ -3,7 +3,6 @@
 [![GitHub Repo stars](https://img.shields.io/github/stars/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/network/members)
 [![GitHub watchers](https://img.shields.io/github/watchers/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/watchers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/itzcrazykns1337/vane?color=blue)](https://hub.docker.com/r/itzcrazykns1337/vane)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ItzCrazyKns/Vane/blob/master/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/ItzCrazyKns/Vane?color=green)](https://github.com/ItzCrazyKns/Vane/commits/master)
 [![Discord](https://dcbadge.limes.pink/api/server/26aArMy8tT?style=flat)](https://discord.gg/26aArMy8tT)
@@ -68,7 +67,7 @@ There are mainly 2 ways of installing Vane - With Docker, Without Docker. Using 
 Vane can be easily run using Docker. Simply run the following command:
 
 ```bash
-docker run -d -p 127.0.0.1:3000:3000 -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:latest
+docker run -d -p 127.0.0.1:3000:3000 -v vane-data:/home/vane/data --name vane ghcr.io/module195/vane:latest
 ```
 
 `127.0.0.1:` keeps Vane reachable only from this computer. Vane has no login, so read [Expose Vane to network](#expose-vane-to-network) before publishing it to other devices.
@@ -84,7 +83,7 @@ This will pull and start the Vane container with the bundled SearxNG search engi
 If you already have SearxNG running, you can use the slim version of Vane:
 
 ```bash
-docker run -d -p 3000:3000 -e SEARXNG_API_URL=http://your-searxng-url:8080 -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:slim-latest
+docker run -d -p 3000:3000 -e SEARXNG_API_URL=http://your-searxng-url:8080 -v vane-data:/home/vane/data --name vane ghcr.io/module195/vane:slim-latest
 ```
 
 **Important**: Make sure your SearxNG instance has:
@@ -310,7 +309,7 @@ Vane has **no login**: anyone who can reach its port can read your chats and use
 Local names (`localhost`, IP addresses, single-label names such as `vane`, and `.local`/`.lan`/`.internal`/`.home.arpa` hosts) work out of the box. If you reach Vane through a public domain name, add it to `VANE_ALLOWED_HOSTS` (comma-separated, `*.example.com` wildcards allowed), otherwise the API answers `403`:
 
 ```bash
-docker run -d -p 3000:3000 -e VANE_ALLOWED_HOSTS=vane.example.com -v vane-data:/home/vane/data --name vane itzcrazykns1337/vane:latest
+docker run -d -p 3000:3000 -e VANE_ALLOWED_HOSTS=vane.example.com -v vane-data:/home/vane/data --name vane ghcr.io/module195/vane:latest
 ```
 
 ## Security and privacy
