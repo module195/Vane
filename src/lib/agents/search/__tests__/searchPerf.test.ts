@@ -48,6 +48,7 @@ import {
   EMBEDDING_CONCURRENCY,
   executeSearch,
 } from '../researcher/actions/search/baseSearch';
+import scrapeURLAction from '../researcher/actions/scrapeURL';
 
 const newBlock = () => ({
   id: 'research',
@@ -220,5 +221,64 @@ describe('search pipeline performance (quality extraction)', () => {
     expect(perPage * 3).toBe(sent.length);
     expect(MAX_PAGE_CHARS).toBe(100_000);
     expect(perPage).toBeLessThanOrEqual(10);
+  });
+
+  it('caps extractor calls across parallel searches and page reads (G1-09)', async () => {
+    const sentence = 'Rust ownership keeps memory safe without a collector. ';
+    const page = sentence.repeat(Math.ceil(60_000 / sentence.length));
+    scrapeMock.mockImplementation(async (url: string) => ({
+      title: url,
+      content: page,
+    }));
+
+    let inFlight = 0;
+    let peak = 0;
+    const llm = () =>
+      new FakeLLM({
+        generateObject: async (input) => {
+          const user = String(input.messages.at(-1)?.content ?? '');
+          if (!user.includes('<scraped_data>'))
+            return { picked_indices: [0, 1, 2] };
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((r) => setTimeout(r, 5));
+          inFlight -= 1;
+          return { extracted_facts: '- fact' };
+        },
+      });
+
+    const session = createFakeSession();
+    session.emitBlock(newBlock() as any);
+    const started = performance.now();
+    /* One iteration with web, academic and discussion searches in quality
+       mode plus a scrape_url call, all at once. */
+    await Promise.all([
+      ...QUERIES.map((queries) =>
+        executeSearch({
+          queries,
+          mode: 'quality',
+          researchBlock: newBlock() as any,
+          session: createFakeSession() as any,
+          llm: llm(),
+          embedding: new FakeEmbedding(),
+        }),
+      ),
+      scrapeURLAction.execute(
+        { urls: ['https://a.test/x', 'https://b.test/y'] },
+        {
+          session: session as any,
+          llm: llm(),
+          embedding: new FakeEmbedding(),
+          researchBlockId: 'research',
+          fileIds: [],
+          mode: 'quality',
+        } as any,
+      ),
+    ]);
+
+    console.log(
+      `[perf] quality x3 + scrape_url: peak extractor calls in flight ${peak}, ${(performance.now() - started).toFixed(0)} ms`,
+    );
+    expect(peak).toBe(EXTRACTOR_CONCURRENCY);
   });
 });

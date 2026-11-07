@@ -1,6 +1,7 @@
 import { Ollama } from 'ollama';
 import BaseEmbedding from '../../base/embedding';
 import { Chunk } from '@/lib/types';
+import { fetchWithHeadersTimeout, llmTimeoutMs } from '../../utils/timeout';
 
 type OllamaConfig = {
   model: string;
@@ -15,6 +16,7 @@ class OllamaEmbedding extends BaseEmbedding<OllamaConfig> {
 
     this.ollamaClient = new Ollama({
       host: this.config.baseURL || 'http://localhost:11434',
+      fetch: fetchWithHeadersTimeout(llmTimeoutMs()),
     });
   }
 

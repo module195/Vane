@@ -202,4 +202,31 @@ describe('Researcher robustness', () => {
       note: NO_NEW_QUERIES_NOTE,
     });
   });
+
+  it('answers when the model calls a tool that does not exist', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(searchSearxng).mockResolvedValue({
+      results: [hit('https://a.test/1', 'rust web memory')],
+      suggestions: [],
+    });
+    const llm = new FakeLLM({
+      streamText: (_input, i) =>
+        i === 0
+          ? [call('c1', 'google_search', { q: 'rust' })]
+          : [
+              call('c2', 'web_search', { queries: ['rust web'] }),
+              call('c3', 'done', {}),
+            ],
+    });
+
+    const out = await research(llm);
+
+    const toolMsg = llm.calls[1].input.messages.find((m) => m.role === 'tool');
+    expect(JSON.parse(toolMsg!.content as string).note).toMatch(
+      /no tool named "google_search"/,
+    );
+    expect(out.searchFindings.map((f) => f.metadata.url)).toEqual([
+      'https://a.test/1',
+    ]);
+  });
 });
