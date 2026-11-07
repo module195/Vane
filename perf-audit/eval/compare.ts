@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EvalRecord, runChecks, visibleAnswer } from './lib/checks';
+import { latencyTable } from './lib/metrics';
 
 const EVAL_DIR = __dirname;
 const RUNS = path.join(EVAL_DIR, 'runs');
@@ -141,6 +142,30 @@ for (const s of runScores) {
       problems.push(`${key(s)} falhou ${c.name}`);
     }
   }
+}
+
+/* Latency and tokens (G1-01). Not part of the approval rule: they are
+   the gain a change claims, shown next to the quality it must keep. */
+const summaryOf = (label: string) => {
+  const f = path.join(RUNS, label, 'summary.json');
+  return fs.existsSync(f) ? readJson(f) : undefined;
+};
+const refSummary = summaryOf(refLabel);
+const runSummary = summaryOf(runLabel);
+if (refSummary?.byMode && runSummary?.byMode) {
+  lines.push(
+    '',
+    '## Latência e tokens',
+    '',
+    'Médias das tarefas que terminaram; as falhas aparecem à parte.',
+    '',
+    ...latencyTable(refSummary.byMode, runSummary.byMode),
+  );
+  if (refSummary.configHash !== runSummary.configHash)
+    lines.push(
+      '',
+      `Atenção: as rodadas usaram configurações diferentes (${refSummary.configHash} e ${runSummary.configHash}: modelo, embedding ou leitor de páginas). Os números não são comparáveis.`,
+    );
 }
 
 const approved = problems.length === 0;
