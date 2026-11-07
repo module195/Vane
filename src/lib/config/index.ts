@@ -247,20 +247,35 @@ class ConfigManager {
     this.initializeFromEnv();
   }
 
+  /* Written to a temporary file and renamed over config.json, so a crash
+     or a full disk mid-write leaves the previous file whole instead of a
+     truncated one (which the next start would replace with defaults). */
+  private writeConfigFile() {
+    const json = JSON.stringify(this.currentConfig, null, 2);
+    const tmp = `${this.configPath}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, json);
+      fs.renameSync(tmp, this.configPath);
+    } catch (err: any) {
+      fs.rmSync(tmp, { force: true });
+      /* config.json bind-mounted as a single file cannot be renamed over
+         (EBUSY) or sits on another device (EXDEV): write it in place. */
+      if (err?.code === 'EBUSY' || err?.code === 'EXDEV') {
+        fs.writeFileSync(this.configPath, json);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   private saveConfig() {
-    fs.writeFileSync(
-      this.configPath,
-      JSON.stringify(this.currentConfig, null, 2),
-    );
+    this.writeConfigFile();
   }
 
   private initializeConfig() {
     const exists = fs.existsSync(this.configPath);
     if (!exists) {
-      fs.writeFileSync(
-        this.configPath,
-        JSON.stringify(this.currentConfig, null, 2),
-      );
+      this.writeConfigFile();
     } else {
       try {
         this.currentConfig = JSON.parse(
@@ -272,13 +287,14 @@ class ConfigManager {
             `Error parsing config file at ${this.configPath}:`,
             err,
           );
+          /* Keep the unreadable file: it may still hold providers and
+             keys that can be recovered by hand. */
+          const backup = `${this.configPath}.corrupt-${Date.now()}`;
+          fs.copyFileSync(this.configPath, backup);
           console.log(
-            'Loading default config and overwriting the existing file.',
+            `Loading default config. The unreadable file was kept at ${backup}.`,
           );
-          fs.writeFileSync(
-            this.configPath,
-            JSON.stringify(this.currentConfig, null, 2),
-          );
+          this.writeConfigFile();
           return;
         } else {
           console.log('Unknown error reading config file:', err);
