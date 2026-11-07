@@ -75,14 +75,33 @@ class ActionRegistry {
       fileIds: string[];
       mode: SearchAgentConfig['mode'];
     },
-  ) {
+  ): Promise<ActionOutput> {
     const action = this.actions.get(name);
 
+    /* A made-up tool name or a tool that throws used to fail the whole
+       answer. Tell the model instead, so it can go on with other tools.
+       Only the error type is reported: messages can carry the query. */
     if (!action) {
-      throw new Error(`Action with name ${name} not found`);
+      console.warn(`[research] model called unknown tool "${name}"`);
+      return {
+        type: 'search_results',
+        results: [],
+        note: `There is no tool named "${name}". Use only the tools you were given.`,
+      };
     }
 
-    return action.execute(params, additionalConfig);
+    try {
+      return await action.execute(params, additionalConfig);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') throw err;
+      const kind = err instanceof Error ? err.name : typeof err;
+      console.warn(`[research] tool "${name}" failed: ${kind}`);
+      return {
+        type: 'search_results',
+        results: [],
+        note: `The tool "${name}" failed (${kind}). Try a different tool or arguments.`,
+      };
+    }
   }
 
   static async executeAll(
