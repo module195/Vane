@@ -1,142 +1,136 @@
-# Fork module195/Vane vs upstream ItzCrazyKns/Vane (antigo Perplexica)
+# Fork module195/Vane x upstream ItzCrazyKns/Vane (antigo Perplexica)
 
-Data da coleta: 06/11/2026. Pesquisa só de leitura. Nada foi escrito no GitHub.
+Data da coleta: 07/11/2026. Atualiza o `perf-audit/upstream.md` de 06/11/2026. Pesquisa só de leitura: nada foi comentado, aberto ou enviado no GitHub. O remoto `upstream` não foi adicionado ao config do repositório; os refs do upstream foram buscados por URL para `refs/remotes/upstream/*`.
 
 ## Ferramentas usadas e falhas
 
 | Ferramenta | Resultado |
 | --- | --- |
-| `git fetch` do upstream (`master` e `canary`) em refs temporários (`refs/remotes/upstream/*`) | OK. O branch atual e a árvore de trabalho não mudaram. |
-| `gh api search/issues` | OK. A primeira rodada deu erro 422 porque a busca exige `is:issue` ou `is:pull-request`. Corrigi e rodei de novo. |
-| GitHub MCP (`mcp__github__*`) | **Só funciona no fork.** No upstream volta `Access denied: repository "itzcrazykns/vane" is not configured for this session`. Por isso usei a busca do `gh` (que traz título, estado e corpo) para tudo do upstream. |
-| DeepWiki (`read_wiki_structure`, `ask_wiki_question`) | OK. Fiz 2 perguntas. |
-| Servidores MCP context7 e exa | Não conectaram (ERR_PROXY_TUNNEL). Não eram necessários. |
-| Nome antigo `ItzCrazyKns/Perplexica` | Redireciona para `ItzCrazyKns/Vane`: `git ls-remote` devolve os mesmos refs, então issues e PRs são os mesmos. |
+| `git fetch` do upstream por URL (todos os branches) | OK. Branch atual e árvore de trabalho sem mudança. |
+| `gh api search/issues` | OK (exige `is:issue` ou `is:pull-request` na busca). |
+| `gh api repos/ItzCrazyKns/Vane/issues/N` | **Bloqueado** (403, repositório não habilitado na sessão). Os corpos das issues vieram da própria busca. |
+| GitHub MCP no upstream | Não usado de novo: na rodada anterior deu `Access denied` para o upstream. |
+| DeepWiki (`ask_wiki_question`) | OK. 2 perguntas novas. |
+| context7 e exa | Não conectaram (ERR_PROXY_TUNNEL). Não eram necessários. |
+| `ItzCrazyKns/Perplexica` | Redireciona para `ItzCrazyKns/Vane` (mesmos refs), então as issues são as mesmas. |
 
-## 1. Fork vs upstream (commits)
+## 1. Fork x upstream
 
-| Comparação | À frente (fork) | Atrás (fork) |
+### Contagens (refeitas hoje)
+
+| Comparação | Fork à frente | Fork atrás |
 | --- | --- | --- |
-| `master` do fork (3b3799c) vs `upstream/master` (348feca, 01/09/2026) | **51** | **0** |
-| `master` do fork vs `upstream/canary` (0987ee4, 27/12/2025) | 114 | 0 |
+| `origin/master` (02bd0c7, 06/11/2026) x `upstream/master` (348feca, 01/09/2026) | **152** (112 sem merges) | **0** |
+| `origin/master` x `upstream/canary` (0987ee4, 27/12/2025) | 215 | 0 |
+| HEAD local `claude/project-thread-bivz3o` (78f19ff) x `upstream/master` | 154 | 0 |
 
-- A base comum é o próprio HEAD do upstream (`348feca Update README.md`). O fork tem **todos** os commits do upstream, incluindo os mais recentes, de abr a set/2026: `adc68fc` imagem slim, `e0aac65` breaks no switch do clima (PR #1097), `40a7cde` scrape-url sem estouro de contexto, `ebcf538` Playwright no Docker, `c3ee198` contexto vazio, `b868aa0` `executeSearch` com deep research e gestão de contexto, `cbe538c` scraper, `0e33641` spinner de upload (PR #1082), `72ac815` clima via freeipapi.
-- **Não existe nenhum commit do upstream fora do fork**, então não há lista de commits "atrás". O upstream não mescla nenhum PR desde 10/04/2026. Depois disso houve só commits diretos do mantenedor, até 01/09/2026, e o fork já tem todos.
-- Os outros branches do upstream (`develop/*`, `feat/*`, `GCP`, `admin-password`) são antigos ou experimentais. Não analisei um a um.
-- Portanto, as "correções do upstream que faltam" são **PRs abertos e nunca mesclados**. O PR #3 do fork já trouxe 9 deles: #1161, #1105, #1226, #1225, #1229, #1231, #1055, #1181 e #1088. O #1094 foi descartado porque quebra o build.
+- A base comum continua sendo o HEAD do upstream (`348feca Update README.md`). O upstream não mudou desde a coleta anterior.
+- Correção de número: o documento anterior dava 51 à frente. Esse era o valor para o commit `3b3799c`. Desde então o fork recebeu cerca de 100 commits (dia 06/11), daí os 152 de hoje.
+- **Nenhum commit do upstream falta no fork.** O upstream não mescla PR desde 10/04/2026 (busca `is:merged merged:>=2026-04-11` devolve 0). Há 244 issues e 136 PRs abertos.
+- Os outros branches do upstream são velhos e de histórico paralelo. O mais recente fora de `master`/`canary` é `feat/improve-search-architecture` (2e2c584, 27/12/2025), que aparece com 929 commits "fora do fork" só porque o histórico foi reescrito antes do squash. Nada lá é mais novo que o master.
+- Logo, as "correções do upstream que faltam" continuam sendo **PRs abertos e nunca mesclados**.
 
-### Correções do upstream (PRs abertos) que ainda faltam no fork
+### PRs abertos do upstream: situação no fork hoje
 
-Verifiquei cada uma no código do fork.
+Muitos itens que estavam como "Falta" em 06/11 entraram no fork no mesmo dia. Conferi cada um no código.
 
-| PR | O que corrige | Área | Situação no fork (verificada) | Prioridade |
-| --- | --- | --- | --- | --- |
-| #1168 | Agrupa as chamadas de embedding em `executeSearch`, em vez de N+1 requisições HTTP por busca | busca / embeddings | **Falta.** `baseSearch.ts:52-59` faz `embedText([q])` e depois `embedText([content])` para cada resultado | Alta (latência e carga) |
-| #1120 | Volta aos top-10 quando o filtro de similaridade (>0.5) remove todos os resultados ("Found 0 results", issue #1119) | busca | **Falta.** Filtro em `baseSearch.ts:73` | Alta |
-| #1038 | No reconnect, manda um snapshot dos blocos em vez de repetir todos os eventos (texto repetido, issue #938) | streaming / sessões | **Falta.** `session.ts:80-95` repete o array `events` inteiro | Alta (bug e memória) |
-| #1096 / #1093 / #1054 | Status `error` no banco quando a busca falha; o cliente checa `res.ok` no reconnect, assim o loading não fica preso para sempre | pipeline / UI / DB | **Parcial.** O fork tem o #1105, que emite `error` na sessão, mas: (a) `SearchAgent` não grava `status:'error'` no banco; (b) `useChat.tsx:375` não verifica `res.ok` depois de `/api/reconnect` | Alta |
-| #1099 | try/catch no `APISearchAgent`, para `/api/search` não travar | API | **Falta.** `api.ts` não tem try/catch em volta do `classify`/`research` | Alta |
-| #1051 | Envia keepalive no SSE a cada 15 s durante gerações longas (LM Studio, issue #1030) | streaming | **Falta** | Média |
-| #993 | Timeout configurável para OpenAI e LM Studio | providers | **Falta.** Não há timeout explícito no LLM | Média |
-| #1147 (issue) | Embeddings do Ollama sem limite de concorrência (502) | providers / embeddings | **Falta.** Não há p-limit ou semáforo | Média |
-| #1091 | Guardas com `Array.isArray` para `urls`/`queries` indefinidos em `scrapeURL`/`uploadsSearch` (issue #964) | busca | **Falta.** `scrapeURL.ts:68` faz `params.urls.slice` sem guarda | Média |
-| #1209 | (1) trava com tool call em streaming; (2) versão do `next` diferente no runtime do Docker | providers / Docker | (1) Coberto pelo #1161, já portado. (2) Talvez coberto pelo `5b45cd0` do fork; conferir | Baixa |
-| #1176 / #1151 | Variações da guarda do `partial-json` contra argumentos vazios | providers | Coberto pelo #1161 | Feito |
-| #1228 | Deduplica fontes por URL normalizada (utm, #fragmento, barra final) | busca | **Falta** | Média (tokens) |
-| #1227 | Remove citações `[n]` acima do número de fontes | UI / writer | **Falta** | Baixa |
-| #1032 / #1037 / #1042 | Remove cercas markdown antes do `JSON.parse` (issue #959, Claude via LiteLLM/OpenRouter) | providers | **Falta.** Não há tratamento de ``` em `src/lib/models` | Média |
-| #1200 | Escapa HTML cru da resposta (XSS) | UI | **Falta.** `MessageBox.tsx:80` `renderRule` não trata HTML | Alta (segurança) |
-| #1222 / #1052 / #1145 / #1224 | Scrape só com http(s), recusa IPs privados (SSRF), valida URLs do config | segurança / scraper | **Falta.** `scrapeURL.ts:50` usa `z.array(z.string())` sem esquema; vale também para o Firecrawl e o fetch do fork | Alta (segurança) |
-| #1223 | Esconde credenciais no `GET /api/config` (issues #1155/#1122) | segurança | Parcial: `a471fef` parou de logar as chaves e bloqueou prototype pollution, mas o GET ainda devolve as chaves | Alta (segurança) |
-| #1214 | Respeita `HTTP(S)_PROXY` (`NODE_USE_ENV_PROXY=1`) | Docker | Falta | Baixa |
-| #1035 / #1073 | Limita ou limpa o HTML raspado para gastar menos tokens (issue #1031) | scraper / tokens | Provavelmente coberto: o upstream tem o `40a7cde`, e o fork tem orçamento de contexto (`0899b6a`) e Firecrawl/Readability | Feito / revisar |
-| #1053 | Limite no contexto do writer | writer | Coberto pelo `writerContext.ts`/`fitWriterSources` do fork | Feito |
-| #1056 | `maxResultsPerQuery` (issue #977) | busca / tokens | Falta | Média |
+| PR / issue | O que corrige | Situação no fork (verificada hoje) |
+| --- | --- | --- |
+| #1168 | Embeddings em lote (N+1) | **Feito.** Uma chamada `embedText([q, ...contents])` por query (`baseSearch.ts:265-269`, commit `73f997a`) |
+| #1147 | Limite de concorrência de embeddings | **Feito.** `createLimiter(3, timeout 120 s)` (`baseSearch.ts:61-69`, `73f997a`, `5de3b07`) |
+| #1120 / #1119 | Volta aos top-10 quando o filtro >0,5 zera a query | **Feito** (`254d12d`, `FALLBACK_RESULTS = 10`) |
+| #1096 / #1093 / #1054 | Status `error` no banco e `res.ok` no reconnect | **Feito** (`046a85e` grava `status:'error'` e blocos parciais; `22daea1` no `useChat`) |
+| #1099 | try/catch no `APISearchAgent` | **Feito** (`c884f1f`) |
+| #993 | Timeout do LLM | **Feito.** `LLM_TIMEOUT_MS`, padrão de 5 min (`src/lib/models/utils/timeout.ts`, `a1425f3`) |
+| #1091 / #964 | Guardas para `urls`/`queries` indefinidos | **Feito** (`aaeead3`, `normalizeURLArgs` em `scrapeURL.ts:55-69`) |
+| #1228 | Fontes deduplicadas por URL normalizada | **Feito** (`786cbac`, `dedupeByUrl`) |
+| #1227 | Remove citações `[n]` acima do total de fontes | **Feito** (`7d36206`) |
+| #1032 / #1037 / #1042 / #959 | JSON dentro de cercas markdown | **Feito** (`33e00bc`, `parseModelJson` com `stripCodeFences` + `repairJson`) |
+| #1200 | Escapar HTML cru (XSS) | **Feito** (`src/lib/markdownSafety.ts`) |
+| #1222 / #1052 / #1145 / #1224 | SSRF no scrape e nos base URLs | **Feito** para o scrape (`src/lib/security/urlGuard.ts`: só http(s), recusa IP privado salvo `VANE_ALLOW_PRIVATE_URLS`). Base URL de provider privado continua aceito de propósito (LM Studio/Ollama locais) |
+| #1223 | Esconder credenciais no `GET /api/config` | **Feito** (`maskConfig`/`maskProvider` em `src/lib/config/secrets.ts`) |
+| #1056 / #977 | Limite de resultados por query | **Feito** de outro jeito: `RESULTS_PER_SEARCH_CALL = 30` dividido entre as queries |
+| #1226 | Pareia resultados com tool calls; `splitText` sem loop infinito | **Feito** (veio no PR #3; `registry.ts:99` usa `Promise.all`, `splitText.ts:45-49`) |
+| #1229 | Rewrite preso no loading | **Feito** (PR #3) |
+| #1231 / #1211 | Resposta normal quando o classificador pula a busca | **Feito** (prompt "Answering without search" em `writer.ts:40`) |
+| #1038 / #938 | Snapshot no reconnect em vez de repetir todos os eventos | **Falta.** `session.ts:80-95` ainda repete o array `events` inteiro |
+| #1051 / #1030 | Keepalive no stream durante gerações longas | **Falta.** Só há o header `Connection: keep-alive` |
+| #1214 / #1210 | Respeitar `HTTP(S)_PROXY` (`NODE_USE_ENV_PROXY=1`) | **Falta** nos dois Dockerfiles |
+| #1230 | Teto nos arrays do corpo de `/api/chat` (GHSA-mrhx-c7xc-m3w5) | **Parcial.** O zod já é 4.6.7, mas `sources`, `history` e `files` continuam sem `.max()` (`route.ts:39-44`) e `safeValidateBody` devolve todas as issues no 400 |
+| #1219 | Node 24.22.1 na imagem (CVE-2026-111497) | **Falta.** `Dockerfile` e `Dockerfile.slim` usam `node:24.5.0-slim` |
+| #1232 / #1131 | Selects de modelo sincronizados após adicionar/apagar modelo | **Falta.** `Section.tsx:29-35` passa `values` (props iniciais) aos `ModelSelect`, não o estado `providers` |
+| #1209 (2) | Versão do `next` diferente no runtime do Docker | Provavelmente coberto (`5b45cd0`, next 16.4.5); não testado |
+| #1050 / #1116 / #980 / #1061 | Groq com `json_schema` | **Falta.** `GroqLLM extends OpenAILLM` sem ajuste; usa `zodResponseFormat` estrito |
+| #1189 / #1185 | `unhandledRejection: fetch failed` | Parcial: o erro agora vai para a sessão e para o banco, mas não há tratamento específico |
 
-## 2. Issues e PRs relevantes do upstream (44 itens)
+## 2. Issues e PRs do upstream
 
-Legenda: "Corrigido upstream" quer dizer código mesclado no master do upstream. "PR aberto" quer dizer que existe uma correção proposta, mas não mesclada.
+Foco em itens abertos ou atualizados desde set/2026 e nos que ainda afetam o fork. Os itens do documento anterior que o fork já resolveu estão resumidos no fim da tabela.
 
-| # | Tipo | Título (resumido) | Estado | Resumo | Área | Corrigido upstream? | No fork |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1199 | issue | Memory leak: ~40 MB retidos por interação (`next-server`) | aberto | A RAM cresce com o tráfego e chegou a 15,6 GB em 3,7 dias; só reiniciar resolve | pipeline / sessões | Não | Parcial (#1225 resolve o vazamento do Transformers). Ver nota A |
-| 1197 | issue | Pipeline trava quando o modelo vaza tokens Harmony (`<\|channel\|>`) | aberto | `/api/search` cai ou fica pendurado sem resposta (gpt-oss) | providers / pipeline | Não | Falta |
-| 1174 | issue | Preso em "Brainstorming" com LM Studio + Qwen (skipSearch, conteúdo vazio) | aberto | O classificador pula a busca e o writer devolve vazio | pipeline | PR #1231 aberto | Tem (#1231) |
-| 1154 | issue | Upgrade 1.12.1→1.12.2: brainstorming infinito (OpenRouter) | aberto | Fica preso no 1º passo | providers | PRs #1161/#1176/#1209 | Tem (#1161) |
-| 1160 | issue | Anthropic: toda busca quebra com "Error: is empty" | aberto | `partial-json` com argumentos vazios | providers | PR #1161 aberto | Tem |
-| 1150 | issue | OpenRouter: streaming quebra com argumentos vazios | aberto | Igual ao #1160 | providers | PRs #1151/#1176 | Tem (#1161) |
-| 1080 | issue | API inutilizável ("Error: is empty") | aberto | `/api/search` trava | API / providers | PRs #1099/#1161 | Parcial (falta #1099) |
-| 1069 | issue | Stuck brainstorming | aberto | Erro engolido, a UI não sai do spinner | pipeline / UI | PR #1105/#1054 | Parcial |
-| 1006 | issue | Preso em "Brainstorming"; chats antigos ficam inutilizáveis | aberto | Mensagem fica `answering` no banco e o reconnect dá 404 | DB / UI / reconnect | PR #1096 aberto | **Falta** |
-| 1070 | issue | Preso no modo "Quality" | aberto | Estouro de contexto no Quality deixa a mensagem `answering` para sempre | pipeline / DB | PR #1093 aberto | **Falta** |
-| 965 | issue | Não consegue buscar (preso em Brainstorming, 18 comentários) | aberto | O sintoma mais comum | pipeline | PR #1054 aberto | Parcial |
-| 1143 | issue | Search is broken: 82 resultados e nenhuma resposta | aberto | O pipeline para depois da busca (Gemini) | pipeline | Não | Verificar |
-| 1119 | issue | SearXNG externo: "Found 0 results" em Speed/Balanced | aberto | O filtro de similaridade >0.5 descarta tudo | busca / embeddings | PR #1120 aberto | **Falta** |
-| 1147 | issue | OllamaEmbedding sem limite de concorrência → 502 | aberto | Inunda o servidor de embedding | providers / embeddings | Não | **Falta** |
-| 1168 | PR | Agrupar embeddings no executeSearch (N+1) | aberto | Uma requisição por resultado | busca / embeddings | Não mesclado | **Falta** |
-| 1144 | issue | Vane gerou US$ 3000 de cobrança no OpenRouter | aberto | Chamadas Opus inesperadas (auto video search?); não há teto de gasto | providers / custo | Não | Falta (sem limite de custo; Bifrost pode ajudar) |
-| 1031 | issue | 481k tokens para resumir uma página | aberto | Página inteira em markdown vai para o LLM | scraper / discover | Parcial (`40a7cde`); PRs #1035/#1073 | Provavelmente coberto (orçamento de contexto + Readability) |
-| 977 | issue | Controlar os tokens gerados pela busca (>500K) | aberto | Pede limite de resultados por query | busca / tokens | PR #1056 aberto | Falta |
-| 1011 | issue | "exceeds the available context size" | aberto | Contexto do writer estoura | pipeline / writer | PR #1053 aberto | Coberto (`0899b6a`) |
-| 981 | issue | Contexto do Ollama fixo no código | aberto | num_ctx fixo em 32000 | providers | PR #1088 aberto | Tem |
-| 1030 | issue | Desconecta do LM Studio antes de terminar | aberto | Processamento longo (~5 min) é cortado | streaming / providers | PRs #1051/#993 | **Falta** |
-| 938 | issue | Texto repetido nas respostas | aberto | O reconnect repete todos os patches | streaming / sessões | PR #1038 aberto | **Falta** |
-| 1132 | issue | Imagem Docker de 8 GB | aberto | Camada do Playwright com 596 MB e mais | Docker | Parcial (`adc68fc` slim) | Melhor: Playwright removido (`0b80355`, `5b45cd0`) |
-| 1121 | issue | Imagem Docker enorme (3 GB, 13 GB depois do pull) | aberto | Pede imagem menor e composável | Docker | Não | Parcial |
-| 1101 | issue | Playwright falta no Dockerfile.slim | fechado | O scrape quebrava no slim | Docker | Sim (`ebcf538`) | N/A (fork sem Playwright) |
-| 858 | issue | SearXNG botdetection: falta X-Forwarded-For | aberto | O SearXNG bloqueia as buscas | busca | PR #1055 aberto | Tem |
-| 964 | issue | TypeError: lendo `slice` de undefined | aberto | Tool call sem `queries`/`urls` (LiteLLM) | busca | Parcial (#1076 mesclado); PR #1091 | Parcial (falta a guarda em scrapeURL/uploads) |
-| 1075 | issue | `t.searching.map is not a function` | fechado | `searching` não era array | UI | Sim (PR #1076) | Tem |
-| 959 | issue | Erro de parse do JSON com Claude via LiteLLM/OpenRouter | aberto | O modelo devolve JSON dentro de ```json | providers | PRs #1032/#1037/#1042 | **Falta** |
-| 980 / 1061 | issue | Groq quebrado (json_schema / schema do web_search) | aberto | Incompatibilidade de schema | providers | PRs #1050/#1116 | Falta |
-| 1185 | issue | unhandledRejection: fetch failed (Ollama) | aberto | Erro de rede vira brainstorming infinito | providers | PR #1189 aberto | Parcial (#1105) |
-| 1186 | issue | chatModels zerados ao reiniciar (Anthropic) | aberto | O config é sobrescrito no boot | config | Não | Verificar |
-| 1172 / 997 | issue | Erros não aparecem no frontend; logs pobres | aberto | Difícil de depurar | UI / logs | PR #1090 | Parcial |
-| 973 | issue | Não consulta a web | aberto | O classificador pula a busca | pipeline / classificador | PR #1003 | Verificar |
-| 1064 | issue | Não envia PDF | fechado | Spinner preso | uploads | Sim (PR #1082) | Tem |
-| 1155 / 1122 | issue | API key vazando no `GET /api/config` + SSRF | aberto | Sem autenticação | segurança | PRs #1223/#1224/#1145 | Parcial (`a471fef`) |
-| 1079 | issue | `/api/config` sem autenticação, leitura e escrita | fechado (completed) | Mesmo problema | segurança | Fechado sem mudança clara no código | Parcial |
-| 1200 | PR | Escapar HTML cru (XSS) | aberto | `markdown-to-jsx` renderiza HTML do modelo | UI / segurança | Não mesclado | **Falta** |
-| 1222 | PR | Scrape só http(s), sem destinos privados | aberto | `file:///etc/passwd` e redirect para loopback | scraper / segurança | Não mesclado | **Falta** |
-| 1015 | PR | Timeout de 10 s no SearXNG + widgets resilientes | mesclado | Evita trava com SearXNG lento | busca | Sim | Tem (`searxng.ts:44`) |
-| 1228 | PR | Deduplicar fontes por URL normalizada | aberto | Mesma página aparece 2 vezes e é raspada 2 vezes | busca / tokens | Não mesclado | **Falta** |
-| 1209 | PR | Pesquisa trava com tool call em streaming + versão do next no Docker | aberto | Igual ao #1161 + drift do Docker | providers / Docker | Não mesclado | Parcial |
-| 759 | issue | App congela: "Failed to calculate number of tokens" | aberto (antigo) | tiktoken/contagem de tokens | pipeline | Não | Verificar (`getTokenCount` é usado no fork) |
-| 503 | issue | Chamadas de API ficam penduradas no Docker | aberto (antigo) | Sem resposta e sem erro | API | Relacionado ao #1099 | **Falta** |
-| 464 | issue | Como reduzir a latência? | fechado | Pergunta geral | pipeline | N/A | N/A |
+| # | Tipo | Título (resumido) | Estado | Resumo | Vale para o fork hoje? | Fork já corrigiu? |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1199 | issue | Memory leak: ~40 MB retidos por interação | aberto | RAM de `next-server` cresce com o tráfego até 15,6 GB | **Sim.** Ver nota A: sessões vivem 30 min com todos os eventos, e os blocos guardam cópias dos vetores de embedding | Parcial (#1225 tira o vazamento do Transformers) |
+| 1233 | issue (novo, 06/11) | 400 "unsupported keyword: $schema" em backends OpenAI-compatíveis estritos | aberto | O validador do servidor recusa `$schema` no `response_format` | **Sim.** Testei: `zodResponseFormat` do SDK `openai` 6.x gera `"$schema": "http://json-schema.org/draft-07/schema#"` e `openaiLLM.ts:272` o envia sem limpar. Afeta classificador, picker e extractor | Não |
+| 1197 | issue | Pipeline trava ou quebra quando o modelo vaza tokens Harmony (`<\|channel\|>`) | aberto | gpt-oss/gemma via gateway Ollama | **Sim.** Não há tratamento de tokens Harmony em `src/lib/models`. Com `046a85e` a falha vira erro visível em vez de trava | Parcial |
+| 1206 | issue | Config de provider apagada: diálogos resetam no meio da edição; config inválida é salva | aberto | Provider salvo como `{"name": ...}` sem chave | **Sim, em parte.** `99fb3c6`/`2fbcd94` tiraram o `setConfig` do `useMemo`, mas `AddProviderDialog.tsx:58-66` e `UpdateProviderDialog.tsx:50-53` ainda resetam o formulário quando a identidade do array de campos muda num re-render do pai. E `registry.addProvider`/`updateProvider` gravam sem chamar `parseAndValidate` | Parcial |
+| 1230 | PR | Teto nos arrays de `/api/chat` (DoS de memória com zod) | aberto | 50.000 itens geram resposta de 4 MB | **Sim** (ver tabela da seção 1) | Parcial |
+| 1170 | issue | `/api/search` dá 500 "reading 'providerId'" | aberto | Corpo sem `chatModel`/`embeddingModel` | **Sim.** `api/search/route.ts:37-41` lê `body.chatModel.providerId` sem validar; vira 500 genérico em vez de 400 | Não |
+| 1038 / 938 | PR / issue | Texto repetido no reconnect | aberto | Replay completo dos patches | **Sim** | Não |
+| 1030 / 1051 | issue / PR | Desconecta do LM Studio antes de terminar | aberto | Sem keepalive em gerações de vários minutos | **Sim.** Proxies reversos cortam streams ociosos; o timeout de 5 min do LLM ajuda a não prender, mas não mantém a conexão viva | Não |
+| 1210 / 1214 | issue / PR | `fetch` do servidor ignora `HTTP(S)_PROXY` | aberto | Docker/Kubernetes com saída restrita | **Sim** | Não |
+| 1207 / 1102 | issue | `Dockerfile.slim`: Next escuta só no IP de `$HOSTNAME` | aberto | Container em duas redes fica inacessível numa delas | **Sim.** Nenhum dos Dockerfiles nem o `entrypoint.sh` (que faz `exec node server.js`) define `HOSTNAME=0.0.0.0` | Não |
+| 1219 | PR | Node 24.22.1 (CVE no decodificador Brotli) | aberto | Imagem com Node 24.5.0 | **Sim** | Não |
+| 1131 / 1232 | issue / PR | Select de modelo não mostra modelo recém-adicionado | aberto | Só atualiza ao reabrir Configurações | **Sim** (`Section.tsx:29-35`) | Não |
+| 1204 | issue | Modelo local OpenAI: "nome" e "chave" parecem trocados | aberto | Usuário confunde "Model key" (id do modelo) com API key | **Sim, e pior em pt-BR:** o rótulo é "Chave do modelo" (`pt-BR.json:73`), que lembra "chave de API". Sugestão: "ID do modelo" | Não |
+| 1208 | issue | Campos de API key aparecem em texto puro | aberto | Inputs `type="text"` | **Sim.** `AddProviderDialog.tsx:166,192` e `UpdateProviderDialog.tsx:147,173` usam `type="text"` | Não (o GET mascara, mas a digitação aparece) |
+| 980 / 1061 | issue | Groq quebrado (json_schema) | aberto | Schema estrito incompatível | **Sim** | Não |
+| 1144 | issue | US$ 3000 de cobrança no OpenRouter | aberto | Sem teto de gasto | **Sim**, em tese: não há limite de custo; o quality ainda pode chegar a 25 iterações. O benchmark do fork agora mede tokens reais (`4614b9c`) | Não |
+| 1186 | issue | `chatModels` zerado ao reiniciar (Anthropic) | aberto | Config sobrescrito no boot | **Não reproduzido.** `initializeFromEnv` (`config/index.ts:300-375`) só acrescenta providers por hash do config; o hash não é recalculado em `updateModelProvider`, o que pode gerar provider duplicado se o env mudar | Verificar |
+| 1169 | issue | `.txt` com várias linhas quebra o JSON (Ollama) | aberto | Caractere de controle dentro de string | Provavelmente não: `ollamaLLM.ts:252` usa `parseModelJson` com `repairJson` | Provavelmente coberto |
+| 1173 | issue | GPT 5.6 recusa `reasoning_effort` com tools | aberto | Parâmetro não suportado | Não: o fork não envia `reasoning_effort` | N/A |
+| 1163 | issue | PDF exportado quebra com japonês/CJK | aberto | jsPDF só com Helvetica | Sim para CJK (`Navbar.tsx:118`); português sai normal | Não |
+| 1143 | issue | 82 resultados e nenhuma resposta (Gemini) | aberto | Pipeline para após a busca | Provavelmente coberto: erros agora chegam à UI e ao banco (`046a85e`, `22daea1`) | Verificar com Gemini |
+| 1184 | issue | "Failed to connect" atrás de SNI-proxy | aberto | `fetch('/api/providers')` com credenciais embutidas na URL da página | Sim (chamadas relativas no cliente); caso raro | Não |
+| 1139 / 1123 / 1180 / 1155 / 1122 | issue | Config sem autenticação, SSRF de segunda ordem pela URL do SearXNG | aberto | Qualquer um que alcance a API muda o config | **Parcial.** O fork mascara segredos e tem `requestGuard.ts` (lista de hosts contra DNS rebinding e escrita só de mesma origem), mas não há login; curl na rede ainda grava `/api/config` | Parcial |
+| 1109 | issue | Citações duplicadas (mesmo artigo em vários sites) | aberto | PubMed, ScienceDirect e ResearchGate para o mesmo paper | Parcial: `dedupeByUrl` junta URLs iguais e o corte >0,75 junta textos parecidos, mas não o mesmo trabalho em domínios diferentes | Parcial |
+| 1172 / 1130 / 997 | issue | Erros e logs pobres | aberto | Difícil depurar | Melhor no fork: erros na UI, `trace.ts` e benchmark | Parcial |
+| 1190 | issue | 0 resultados com o SearXNG embutido | fechado | SearXNG da imagem antigo | Fork fixou o commit do SearXNG num estágio próprio (`68cd78a`) | Revisar a versão fixada |
+| 1132 / 1121 | issue | Imagem Docker enorme | aberto | Camadas de Playwright etc. | Fork sem Playwright, slim sem pip e só o runtime CPU do onnxruntime (`6fcf5e2`, `197ebef`, `2f804d8`) | Feito em grande parte |
+| Já resolvidos no fork | — | #1168, #1147, #1119/#1120, #1006, #1070, #965, #1069, #1080, #1099, #503, #964, #959, #1011, #1031, #977, #981, #858, #1160, #1150, #1154, #1174, #1211, #1200, #1222, #1228, #1227 | — | Ver a seção 1 | — | Sim |
 
 ### Notas de auditoria (código do fork)
 
-- **A. Memória (#1199).** O `SessionManager` (`src/lib/session.ts`) guarda cada sessão num `Map` global com `setTimeout` de 30 min. Cada sessão mantém o array `events`, com todos os patches, e um `Map` de `blocks`. Os blocos de pesquisa incluem `metadata.embedding` de cada resultado (`baseSearch.ts`), ou seja, vetores de centenas ou milhares de floats por resultado. Isso fica na memória por 30 min, mesmo depois do `end`. O `APISearchAgent` cria uma sessão extra (`SessionManager.createSession()` em `api.ts`) por chamada, com o mesmo TTL. Somado ao replay sem snapshot (#1038), isso explica bem a retenção de cerca de 40 MB por interação. Sugestões: apagar a sessão (ou encurtar o TTL) depois do `end`/`error`, `clearTimeout`, e não guardar `embedding` nos blocos que vão para o cliente.
-- **B. Latência.** Embeddings N+1 (#1168), sem limite de concorrência (#1147) e sem timeout no LLM (#993).
-- **C. Travas.** Falta gravar `status:'error'` no banco e o cliente não checa `res.ok` no reconnect (#1096/#1093). Também falta try/catch no `APISearchAgent` (#1099).
+- **A. Memória (#1199), verificado hoje.** O `SessionManager` (`src/lib/session.ts`) guarda cada sessão num `Map` por 30 min (`setTimeout` fixo, sem `clearTimeout` e sem apagar no `end`/`error`). Cada sessão mantém o array `events` com todos os patches e um `Map` de blocos. O `rfc6902` clona o `value` de cada `replace` (`node_modules/rfc6902/patch.js:151`). Em speed/balanced, `baseSearch.ts:282-291` coloca o vetor `embedding` de cada resultado nos chunks e manda `replace /data/subSteps` com eles (`baseSearch.ts:361-385`). O `delete uniqueResult.metadata.embedding` da linha 443 só apaga o objeto original. Testei com um script contra o `session.ts` real: o bloco da sessão continua com os 1024 floats depois do `delete`. Consequências: (1) os vetores vão no NDJSON para o navegador; (2) ficam na memória da sessão por 30 min; (3) `session.getAllBlocks()` é o que vai para `messages.responseBlocks` (`index.ts:252`), então, se nenhum `replace` posterior trocar o array, os vetores também são gravados no SQLite. Cada `updateBlock` repete o array `subSteps` inteiro, então `events` cresce de forma quadrática nas iterações. Correção barata: não pôr `embedding` nos chunks que vão para o bloco (manter num `Map` à parte), apagar a sessão alguns minutos depois do `end`, e mandar snapshot no reconnect (#1038).
+- **B. `$schema` (#1233).** Afeta toda chamada `generateObject` em providers que estendem `OpenAILLM` (OpenAI, Anthropic, Gemini, Groq, LM Studio, Lemonade, Bifrost) contra servidores com validador estrito. Correção: tirar `$schema` de `response_format.json_schema.schema` antes do envio.
+- **C. Outros riscos que continuam.** Sem keepalive no stream (#1051), sem proxy de saída (#1214), sem teto de custo (#1144), e `generateText` não streaming ainda faz `JSON.parse(tc.function.arguments)` sem guarda (`openaiLLM.ts:144`), o mesmo erro do #1160 no caminho sem streaming.
 
-## 3. DeepWiki: arquitetura do pipeline de busca (ItzCrazyKns/Vane)
+## 3. Conferência com o DeepWiki
 
-Páginas do wiki: Overview, Architecture (Search and Chat Pipeline, Model Provider System, Data Persistence, Session Management), API Reference, Backend Systems (Search Agent, Researcher and Research Actions, Model Abstractions, SearXNG Integration) e outras.
+O DeepWiki descreve o upstream (às vezes código antigo, e às vezes se contradiz). Abaixo, o que ele diz e o que o código do fork faz hoje.
 
-### Resumo do que o DeepWiki diz
+| Tema | DeepWiki (upstream) | Fork hoje (verificado no código) | Diverge? |
+| --- | --- | --- | --- |
+| Iterações por modo | speed 2, balanced 6, quality 25 | Iguais, mas agora vêm de `EFFORT_PRESETS` (`src/lib/agents/search/effort.ts`), com `readPages` e `fastPath` por modo | Sim (presets e caminho rápido) |
+| Speed | Loop de research normal | Caminho rápido: usa as queries do classificador (até 3) sem passar pelo loop (`891cca7`, `78f19ff` respeita `site:`) | Sim |
+| Ranking speed/balanced | Cosseno com a query, corte <0,5, ordena por similaridade, remove duplicatas >0,75, máximo 20 | Ranking híbrido: embedding + lexical fundidos por RRF entre as queries (`ranking.ts`, `1a64c7a`), fallback para top-10, dedupe por URL normalizada, filtros de recência/domínio/idioma (`filters.ts`), nova busca quando a evidência é fraca. Mantém o corte 0,5 e o >0,75 | Sim |
+| Embeddings | Um pedido por resultado (implícito) | Um pedido por query, até 3 em paralelo, timeout de 120 s | Sim |
+| Balanced lê páginas? | Não; só o quality raspa | Sim: lê 2 páginas e anexa os 2 melhores trechos por página (`pageReading`, timeout 8 s) | Sim |
+| Quality | Picker escolhe até 3 resultados, raspa e extrai fatos com LLM | Igual na lógica, mas extrações limitadas a 3 simultâneas e página cortada em 100.000 caracteres (`6cc1684`) | Sim (limites) |
+| Raspagem | `Scraper` (na coleta anterior: Playwright) | Firecrawl quando configurado, senão fetch + Readability; `urlGuard` contra SSRF | Sim |
+| Busca web | Só SearXNG, timeout 10 s; "não há backend alternativo nem MCP" | `searchWeb` escolhe SearXNG ou Firecrawl; ferramentas MCP do Bifrost como ações `mcp_*` | Sim |
+| Structured output | OpenAI usa `responses.stream` com `zodTextFormat` | `generateObject` usa `chat.completions.create` + `zodResponseFormat` + `parseModelJson` (cercas e reparo), temperatura 0,2 e teto de tokens (`124d69e`). `responses.stream` só sobra em `streamObject` | Sim |
+| Providers | Na 2ª pergunta disse que `LMStudioLLM` estende `BaseLLM` | No fork (e no upstream) `LMStudioLLM`, Anthropic, Gemini, Groq e Lemonade estendem `OpenAILLM`; só Ollama estende `BaseLLM` direto. Fork soma Bifrost | DeepWiki errou nesse ponto |
+| Config | `config.json`; env sobrepõe defaults | Env só preenche valores vazios no primeiro start; depois vale o salvo. Seção `bifrost`, `migrateConfig` simples | Sim (prioridade do env) |
+| DB e migrações | Migração seria "placeholder" em `ConfigManager.migrateConfig` | Runner próprio `src/lib/db/migrate.ts` aplica `drizzle/*.sql` no start e registra em `ran_migrations`; WAL + `synchronous=NORMAL`, índice em `messages(chatId)`, exclusão em transação | Sim (o DeepWiki confunde migração de config com migração de banco) |
+| Formato do stream | "SSE" com `text/event-stream` | O header é `text/event-stream`, mas o corpo é NDJSON (um JSON por linha), não SSE de verdade. Upstream igual | Só de nome |
+| Reconnect | Na 2ª pergunta disse que **não** repete eventos | Repete todos (`session.ts:80-95`), no upstream também (`git show 348feca:src/lib/session.ts`, linhas 81-92). Na coleta anterior o próprio DeepWiki disse que repetia | DeepWiki se contradiz; o código repete |
+| Status no erro | `SearchAgent` grava `completed` mesmo no erro | Fork grava `status:'error'` com blocos parciais (`index.ts:38`) | Sim |
+| Timeouts | Só SearXNG 10 s; nenhum no LLM | LLM 5 min (`LLM_TIMEOUT_MS`), embeddings 120 s, leitura de página 8 s, GET da lista de modelos 10 s com cache, Firecrawl, MCP e RSS com timeout | Sim |
+| Limites de concorrência | 3 queries por `web_search`, 3 URLs por `scrape_url` | Iguais (`MAX_QUERIES_PER_CALL`, `MAX_URLS_PER_CALL`), mais limitador global de embeddings e de extrações | Sim (limites extras) |
+| Writer | Sem limite explícito de contexto (coleta anterior) | `fitWriterSources` (`writerContext.ts`), resposta direta primeiro e tamanho proporcional (`eacf69b`) | Sim |
+| Benchmark | Não existe | `src/lib/benchmark/` e `POST /api/benchmark` | Só no fork |
 
-| Tema | Upstream segundo o DeepWiki | Diferença provável no fork |
-| --- | --- | --- |
-| Entrada | `POST /api/chat` → `SearchAgent`; `/api/search` → `APISearchAgent`, que reaproveita o classificador e o researcher, sem blocos | O fork tem a rota extra `POST /api/benchmark` (NDJSON) e instrumentação (`src/lib/benchmark/instrument.ts`) |
-| Classificador | Um LLM decide `skipSearch`, os widgets e reescreve a pergunta como standalone | O fork tem o #1231: quando pula a busca, o modelo responde normalmente. Também responde e busca no idioma do usuário (`64a539a`) |
-| Modos | speed `maxIteration=2`, balanced 6, quality 25; quality usa a tool `__reasoning_preamble` | Mesmos valores no `researcher/index.ts` (verificar se mudaram) |
-| Ações | `ActionRegistry`: web_search, academic, social, uploads_search, scrape_url, done | O fork acrescenta `mcp.ts` (ferramentas MCP) e `plan.ts`. **O DeepWiki não fala de MCP**, então os riscos de tempo e tokens das ferramentas MCP são só do fork |
-| Busca | `searchSearxng` com timeout de 10 s (AbortController) | O fork pode buscar via **Firecrawl** (`firecrawlSearch.ts`, com timeout) e manda X-Forwarded-For ao SearXNG |
-| Embeddings / rerank | Speed/balanced: embedding da query e de cada resultado, cosseno, corte em <0.5, ordena por similaridade, remove duplicatas >0.75 | Igual no fork (`baseSearch.ts`), com o mesmo N+1 e o mesmo risco de 0 resultados |
-| Quality / deep research | `executeSearch` raspa os resultados ainda não lidos, faz `splitText` (4000 tokens, overlap de 500) e extrai fatos com LLM | No fork, a raspagem é **Firecrawl + fetch/Readability**, não Playwright. O DeepWiki diz Playwright (20 s de navegação, 5 s de load state), o que já não vale para o fork |
-| Contexto do writer | O DeepWiki **não encontrou** limite explícito do contexto do writer | O fork tem orçamento de contexto (`writerContext.ts`, `fitWriterSources`, `0899b6a`). Diferença importante |
-| Uploads | `splitText` (512/128 tokens), embedding de cada chunk | Igual; `uploads/manager.ts` com extensão sanitizada (`a471fef`) |
-| Tokens | `js-tiktoken` `cl100k_base` | Igual (`getTokenCount`) |
-| Streaming | `SessionManager` como barramento de eventos; blocos + patches RFC6902 (`updateBlock`); NDJSON sobre a resposta HTTP | Igual |
-| Sessões / reconnect | TTL de 30 min; `POST /api/reconnect/[id]` repete **todos** os eventos | Igual. O fork corrigiu o TDZ e o double-close (`a471fef`), mas mantém o replay completo e o TTL fixo |
-| Providers / tool calls | OpenAI e Ollama fazem streaming de tool calls; Anthropic, Groq, Gemini, LM Studio e Lemonade estendem o OpenAI | O fork tem guarda contra argumentos vazios (#1161) e o gateway **Bifrost** (`src/lib/bifrost.ts`, atrás de uma flag de configuração), uma camada a mais de latência e de falhas que o DeepWiki não cobre |
-| Timeouts | SearXNG 10 s, scraper 20 s; **não há timeout global de LLM** | Igual para o LLM. O fork tem timeouts no Firecrawl, no MCP (`mcp/client.ts`), no RSS do discover e no lookup do LM Studio |
-| Riscos citados | Quality com até 25 iterações (latência e custo); custo dos embeddings; memória do array `events` | Os mesmos, mais o loop MCP e o Firecrawl |
+### O que o DeepWiki ainda ajuda a ver
 
-### Pontos para checar no fork por causa do DeepWiki
-
-1. Não há timeout global no LLM (upstream e fork). Com Bifrost no meio, um provider pendurado prende a sessão e a memória por até 30 min.
-2. O replay de `events` cresce sem limite com as iterações do quality (até 25) e mais as ferramentas MCP.
-3. As ferramentas MCP e o Firecrawl entram no orçamento de contexto? Confirmar se `fitWriterSources` cobre a saída do MCP.
+1. O DeepWiki não fala de MCP, Firecrawl, Bifrost nem do caminho rápido. Esses caminhos só existem no fork e não têm a "revisão" de ninguém de fora.
+2. O que ele diz de sessão e memória (eventos guardados por 30 min) continua valendo, e a nota A mostra que o fork ainda carrega os vetores de embedding nessa memória.

@@ -1,17 +1,17 @@
 # Ferramentas disponíveis nesta sessão
 
-Levantado em 06/11/2026, no início da auditoria. "OK" quer dizer que a ferramenta foi usada ou testada nesta rodada.
+Levantado em 06/11/2026 e revisto em 07/11/2026, no início da nova rodada (base `78f19ff`). "OK" quer dizer que a ferramenta foi usada ou testada nesta rodada.
 
 ## Conectores (MCP)
 
 | Pedido no roteiro | Situação | Uso / alternativa |
 |---|---|---|
-| GitHub | OK (escrita só em `module195/Vane`; leitura de repositórios públicos como o upstream) | Comparação com `ItzCrazyKns/Vane`, issues e PRs do upstream. Busca via `gh api search/*`. |
-| DeepWiki | Disponível | Conferir a arquitetura com a visão do upstream. O fork não está indexado; uso `ItzCrazyKns/Vane`. |
+| GitHub | OK (escrita só em `module195/Vane`; leitura de repositórios públicos como o upstream). Em 07/11, `gh api repos/ItzCrazyKns/Vane/issues/N` responde 403; `search/issues` funciona | Comparação com `ItzCrazyKns/Vane`, issues e PRs do upstream. Os refs do upstream foram buscados por URL, sem adicionar remote. |
+| DeepWiki | OK (usado em 07/11) | Conferir a arquitetura com a visão do upstream. O fork não está indexado; uso `ItzCrazyKns/Vane`. |
 | Context7 | **Falhou ao conectar** (erro de túnel no proxy) | Alternativa: tipos e código das bibliotecas em `node_modules` e docs oficiais por busca na web (Tavily, Parallel). |
 | Exa | **Falhou ao conectar** (erro de túnel no proxy) | Alternativa: Tavily e Parallel, Pipeworx (versões de pacotes npm) e `yarn audit`. |
 | Chrome DevTools (plugin ECC) | Instável: conecta e desconecta nesta sessão | Alternativa estável: Playwright com o Chromium do container (traces, métricas, console, rede) e `npx lighthouse` com o mesmo Chromium. |
-| Seu Mac (pastas e Chrome) | Desconectado | Só se você reconectar. O modelo local fixo roda no seu Mac. |
+| Seu Mac (pastas e Chrome) | Desconectado; em 07/11 o servidor de dispositivos remotos foi removido da sessão | Só se você reconectar o dispositivo ou abrir uma sessão de Remote Control. O modelo local fixo (LM Studio) roda no seu Mac. |
 | Tavily, Parallel, Pipeworx, Hacker News, Reddit, arXiv, Wikidata | Disponíveis | Problemas conhecidos nas versões exatas das dependências; discussões sobre Vane/Perplexica. |
 | Claude Docs / Artifacts | Disponíveis | Relatórios longos, se você preferir em vez de `.md`. |
 
