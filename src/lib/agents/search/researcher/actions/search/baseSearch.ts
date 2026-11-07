@@ -154,6 +154,14 @@ const searchSafely = async (q: string, opts?: SearxngSearchOptions) => {
   }
 };
 
+/* The research block is streamed on every update and saved with the
+   message, so it gets a copy of each result without its embedding vector
+   (768 to 4096 floats that only the ranking below needs). */
+const withoutVector = (c: Chunk): Chunk => {
+  const { embedding, ...metadata } = c.metadata;
+  return { ...c, metadata };
+};
+
 export const executeSearch = async (input: {
   queries: string[];
   mode: SearchAgentConfig['mode'];
@@ -356,7 +364,7 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
         researchBlock.data.subSteps.push({
           id: searchResultsBlockId,
           type: 'search_results',
-          reading: resultChunks,
+          reading: resultChunks.map(withoutVector),
         });
 
         input.session.updateBlock(researchBlock.id, [
@@ -375,7 +383,7 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
           subStepIndex
         ] as SearchResultsResearchBlock;
 
-        subStep.reading.push(...resultChunks);
+        subStep.reading.push(...resultChunks.map(withoutVector));
 
         input.session.updateBlock(researchBlock.id, [
           {
@@ -513,7 +521,7 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
         researchBlock.data.subSteps.push({
           id: searchResultsBlockId,
           type: 'search_results',
-          reading: resultChunks,
+          reading: resultChunks.map(withoutVector),
         });
 
         input.session.updateBlock(researchBlock.id, [
@@ -532,7 +540,7 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
           subStepIndex
         ] as SearchResultsResearchBlock;
 
-        subStep.reading.push(...resultChunks);
+        subStep.reading.push(...resultChunks.map(withoutVector));
 
         input.session.updateBlock(researchBlock.id, [
           {
