@@ -15,6 +15,12 @@ import { parseModelJson } from '../../utils/json';
 import { objectMaxTokens, objectTemperature } from '../../utils/objectDefaults';
 import { fetchWithHeadersTimeout, llmTimeoutMs } from '../../utils/timeout';
 import { reportUsage } from '@/lib/trace';
+import {
+  isBadRequest,
+  isGptOss,
+  StructuredReasoning,
+  structuredReasoning,
+} from '../../utils/reasoningControl';
 
 /* Ollama reports token counts and server-side timings (in nanoseconds) on
    the final response; read only by the benchmark. */
@@ -216,14 +222,37 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
     }
   }
 
+  /* Set when the model rejected `think` with a 400. */
+  private thinkRejected = false;
+
+  /**
+   * think for generateObject. Default keeps the fixed list above. Off sends
+   * false for any model; low sends "low" to gpt-oss (which only takes a
+   * level) and false to the rest.
+   */
+  private structuredThink(mode: StructuredReasoning): {
+    think?: boolean | 'low';
+  } {
+    const listed = reasoningModels.find((m) => this.config.model.includes(m));
+    if (mode === 'default' || this.thinkRejected) {
+      return listed ? { think: false } : {};
+    }
+    return {
+      think: mode === 'low' && isGptOss(this.config.model) ? 'low' : false,
+    };
+  }
+
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {
-    const response = await this.ollamaClient.chat({
+    const mode = structuredReasoning();
+    const think = this.structuredThink(mode);
+    const request = (t: { think?: boolean | 'low' }) =>
+      this.ollamaClient.chat({ ...base, ...t });
+
+    const base = {
       model: this.config.model,
       messages: this.convertToOllamaMessages(input.messages),
       format: z.toJSONSchema(input.schema),
-      ...(reasoningModels.find((m) => this.config.model.includes(m))
-        ? { think: false }
-        : {}),
+      stream: false as const,
       options: {
         top_p: input.options?.topP ?? this.config.options?.topP,
         temperature:
@@ -244,7 +273,22 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
         stop:
           input.options?.stopSequences ?? this.config.options?.stopSequences,
       },
-    });
+    };
+
+    let response;
+    try {
+      response = await request(think);
+    } catch (err) {
+      /* A model without thinking support may refuse `think` outright. */
+      if (mode === 'default' || !('think' in think) || !isBadRequest(err)) {
+        throw err;
+      }
+      response = await request({});
+      this.thinkRejected = true;
+      console.warn(
+        `[llm] ${this.config.model} rejected think; sending structured calls without it`,
+      );
+    }
 
     reportUsage(ollamaUsage(response, response.message.thinking?.length ?? 0));
 
