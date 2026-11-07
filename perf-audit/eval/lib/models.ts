@@ -27,6 +27,12 @@ export class TempZeroLLM extends BaseLLM<{ inner: BaseLLM<any> }> {
     super({ inner });
   }
 
+  /* Without this the search code budgets for BaseLLM's default window
+     instead of the one LM Studio reports for the loaded model. */
+  getContextWindow() {
+    return this.inner.getContextWindow();
+  }
+
   async generateText(input: GenerateTextInput): Promise<GenerateTextOutput> {
     const t = performance.now();
     try {
