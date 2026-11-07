@@ -95,22 +95,30 @@ beforeEach(() => {
 });
 
 describe('SearchAgent failure persistence', () => {
-  it('marks the message as error when the classifier throws', async () => {
+  /* G1-04: a classifier failure falls back to a plain web search, so it
+     no longer ends the answer. */
+  it('still answers when the classifier throws', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const llm = new FakeLLM({
       generateObject: () => {
         throw new Error('classifier exploded');
       },
+      streamText: (_input, i) =>
+        i === 0
+          ? [
+              {
+                contentChunk: '',
+                toolCallChunk: [{ id: 'd', name: 'done', arguments: {} }],
+              },
+            ]
+          : [{ contentChunk: 'ok', toolCallChunk: [] }],
     });
     const session = createFakeSession();
 
     await new SearchAgent().searchAsync(session as any, input(llm));
 
-    expect(session.events.at(-1)).toEqual({
-      event: 'error',
-      data: { data: 'classifier exploded' },
-    });
-    expect(lastUpdate().status).toBe('error');
-    expect(lastUpdate().responseBlocks).toEqual([]);
+    expect(session.events.at(-1)?.event).toBe('end');
+    expect(lastUpdate().status).toBe('completed');
   });
 
   it('marks the message as error when the researcher throws', async () => {
@@ -168,8 +176,9 @@ const withTimeout = <T>(p: Promise<T>, ms = 2000): Promise<T> =>
 describe('APISearchAgent failure', () => {
   it('emits an error event instead of rejecting', async () => {
     const llm = new FakeLLM({
-      generateObject: () => {
-        throw new Error('classifier exploded');
+      generateObject: () => classification(true),
+      streamText: () => {
+        throw new Error('model exploded');
       },
     });
     const session = createFakeSession();
@@ -180,7 +189,7 @@ describe('APISearchAgent failure', () => {
 
     expect(session.events.at(-1)).toEqual({
       event: 'error',
-      data: { data: 'classifier exploded' },
+      data: { data: 'model exploded' },
     });
   });
 });
@@ -200,8 +209,9 @@ describe('POST /api/search on agent failure', () => {
 
   beforeEach(() => {
     llmHolder.llm = new FakeLLM({
-      generateObject: () => {
-        throw new Error('classifier exploded');
+      generateObject: () => classification(true),
+      streamText: () => {
+        throw new Error('model exploded');
       },
     });
   });
@@ -212,7 +222,7 @@ describe('POST /api/search on agent failure', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.message).toEqual(expect.any(String));
-    expect(body.error).toBe('classifier exploded');
+    expect(body.error).toBe('model exploded');
   });
 
   it('sends an error event and closes the stream, without hanging', async () => {
@@ -226,7 +236,7 @@ describe('POST /api/search on agent failure', () => {
     expect(lines[0].type).toBe('init');
     expect(lines.at(-1)).toEqual({
       type: 'error',
-      data: 'classifier exploded',
+      data: 'model exploded',
     });
   });
 

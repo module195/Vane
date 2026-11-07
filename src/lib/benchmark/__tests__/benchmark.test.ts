@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FakeEmbedding, FakeLLM } from '@/__tests__/helpers/fakes';
 import { InstrumentedLLM, newRecorder, withHttpTrace } from '../instrument';
 import { analyze } from '../analyze';
@@ -201,7 +201,14 @@ describe('execução de um caso', () => {
   });
 
   it('erro do modelo vira caso com falha, sem derrubar o benchmark', async () => {
-    const llm = new FakeLLM({});
+    /* A falha do classificador já não derruba a busca (G1-04), então o
+       erro vem do pesquisador e do redator. */
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const llm = new FakeLLM({
+      streamText: () => {
+        throw new Error('model exploded');
+      },
+    });
     const r = await runCase(
       BENCHMARK_CASES[0],
       { llm, embedding: new FakeEmbedding() },

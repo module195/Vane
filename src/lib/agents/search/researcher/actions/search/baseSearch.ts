@@ -1,5 +1,6 @@
 import BaseEmbedding from '@/lib/models/base/embedding';
 import BaseLLM from '@/lib/models/base/llm';
+import { describeError } from '@/lib/utils/describeError';
 import { SearxngSearchOptions } from '@/lib/searxng';
 import { searchWeb } from '@/lib/webSearch';
 import SessionManager from '@/lib/session';
@@ -583,21 +584,33 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
         ),
     });
 
-    const pickerResponse = await input.llm.generateObject<typeof pickerSchema>({
-      schema: pickerSchema,
-      messages: [
-        {
-          role: 'system',
-          content: pickerPrompt,
-        },
-        {
-          role: 'user',
-          content: `${input.question ? `<question>${input.question}</question>\n` : ''}<queries>${input.queries.join(', ')}</queries>\n<search_results>${uniqueResults.map((result, index) => `<result indice=${index}>${JSON.stringify(result)}</result>`).join('\n')}</search_results>`,
-        },
-      ],
-    });
+    /* A picker that fails (invalid JSON from a small model, say) falls back
+       to the first 3 results instead of ending the search. */
+    let pickedIndices: number[];
+    try {
+      const pickerResponse = await input.llm.generateObject<
+        typeof pickerSchema
+      >({
+        schema: pickerSchema,
+        messages: [
+          {
+            role: 'system',
+            content: pickerPrompt,
+          },
+          {
+            role: 'user',
+            content: `${input.question ? `<question>${input.question}</question>\n` : ''}<queries>${input.queries.join(', ')}</queries>\n<search_results>${uniqueResults.map((result, index) => `<result indice=${index}>${JSON.stringify(result)}</result>`).join('\n')}</search_results>`,
+          },
+        ],
+      });
+      pickedIndices = pickerResponse.picked_indices.slice(0, 3);
+    } catch (err) {
+      console.warn(
+        `[search] result picker failed (${describeError(err)}); reading the first 3 results`,
+      );
+      pickedIndices = [0, 1, 2];
+    }
 
-    const pickedIndices = pickerResponse.picked_indices.slice(0, 3);
     const pickedResults = pickedIndices
       .map((i) => uniqueResults[i])
       .filter((r) => r !== undefined);
