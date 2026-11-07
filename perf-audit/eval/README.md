@@ -1,13 +1,16 @@
-# Avaliação de qualidade (Fase 2)
+# Avaliação de qualidade (Fase 5)
 
-Harness que roda as 30 perguntas de `questions.json` nos três modos, guarda as respostas e compara uma mudança com a referência. Nada em `src/` é alterado para rodar a avaliação.
+Harness que roda as 36 perguntas de `questions.json` nos três modos, guarda as respostas e compara uma mudança com a referência. Nada em `src/` é alterado para rodar a avaliação.
+
+Por padrão roda o caminho do chat (`SearchAgent`, o mesmo do `/api/chat` e da interface, com a gravação no banco); `--path api` roda o `APISearchAgent` do `/api/search`. Os dois redatores são diferentes, então uma mudança em um caminho só é avaliada por uma rodada daquele caminho.
+
+Cada resposta grava, além do texto e das fontes: tempo total, até o primeiro token, de pesquisa e de escrita; tokens de entrada, saída e raciocínio como o servidor informa; chamadas de LLM e de embedding; tamanho do stream e do que foi salvo; e se algum vetor de embedding vazou para os blocos. O `summary.json` traz o hash da configuração (modelo, caminho, perguntas, prompt do juiz e prompts de `src/lib/prompts`) e o commit.
 
 ## O que fica fixo
 
 - **Modelo avaliado:** LM Studio, chamado pelas mesmas classes que o Vane usa (`LMStudioLLM`, `LMStudioEmbedding`). Todas as chamadas vão com temperatura 0 (`lib/models.ts`). O modelo usado fica gravado em `runs/<rótulo>/summary.json`.
 - **SearxNG:** um servidor local (`lib/replay.ts`) responde no lugar da SearxNG. Com `--record`, ele repassa à SearxNG real e grava em `perf-audit/fixtures/eval/searxng/`. Sem `--record`, só responde o que foi gravado. Uma consulta não gravada devolve lista vazia e entra na taxa de faltas do `summary.json`.
-- **Páginas (modo quality):** `Scraper.scrape` é envolvido em tempo de execução. Com `--record`, roda o Playwright de verdade e grava título e texto em `perf-audit/fixtures/eval/pages/`. Na repetição, devolve o texto gravado; URL não gravado recebe o mesmo formato de falha do scraper.
-  - Mudança em relação ao plano: o plano previa servir o HTML gravado por um servidor local. Isso exigiria trocar os URLs das fontes, o que muda o que o modelo lê. Gravar a saída do scraper mantém os URLs reais. O custo do Playwright será medido à parte na Fase 3.
+- **Páginas (balanced e quality):** `Scraper.scrape` é envolvido em tempo de execução. Com `--record`, lê a página de verdade (Firecrawl, se `FIRECRAWL_API_URL` estiver definido; senão `fetch` + Readability) e grava título e texto em `perf-audit/fixtures/eval/pages/`. Na repetição, devolve o texto gravado; URL não gravado recebe o mesmo formato de falha do scraper. Gravar a saída do scraper, e não o HTML, mantém os URLs reais das fontes.
 - **Arquivos enviados:** ficam em `perf-audit/fixtures/eval/uploads/` e passam pelo `UploadManager` real, numa pasta temporária. A pasta de dados do usuário nunca é lida nem escrita (`DATA_DIR` aponta para uma pasta temporária apagada no fim).
 
 ## Arquivos de teste enviados
@@ -59,13 +62,16 @@ Qualquer endpoint compatível com a API da OpenAI funciona. As chaves vêm só d
 
 A busca na web passa sempre pela SearxNG gravada, mesmo com `FIRECRAWL_API_URL` definido. Essa variável só troca o leitor de páginas, que fica registrado em `summary.json` (`scraper`).
 
-Opções úteis de `run.ts`: `--modes speed,balanced` e `--ids A01,B08` para rodar só uma parte.
+Opções úteis de `run.ts`: `--modes speed,balanced` e `--ids A01,B08` para rodar só uma parte; `--resume` para continuar uma rodada interrompida (recusa se o hash da configuração mudou); `--path api` para o caminho do `/api/search`.
 
 ## Regra de aprovação (`compare.ts`)
 
 - nenhum critério cai mais de 0,3 na média de qualquer modo;
 - nenhuma pergunta cai 2 pontos ou mais em qualquer critério;
-- nenhuma regressão nas verificações automáticas (`checks.ts`).
+- nenhuma regressão nas verificações automáticas (`checks.ts`);
+- resposta com erro ou vazia conta como nota 0 em todos os critérios (como no `search_evals`) e aparece marcada como `failed` no `scores.json`.
+
+O relatório também traz custo e latência por modo (tempo, primeiro token, tokens, chamadas), lado a lado com a referência. Uma piora maior que o ruído entre as três referências precisa de justificativa.
 
 As verificações automáticas comparam com a referência: uma verificação que a própria referência já reprova (por exemplo, idioma trocado pelo modelo) não conta como regressão, mas aparece no relatório.
 

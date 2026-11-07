@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "notes": "Perguntas da avaliação de qualidade (Fase 2). sources segue o campo do /api/chat; files aponta para perf-audit/fixtures/eval/uploads.",
+  "version": 2,
+  "notes": "Perguntas da avaliação de qualidade. v2 (07/11/2026) acrescenta o grupo G, que cobre os casos tocados pelas correções da auditoria. sources segue o campo do /api/chat; files aponta para perf-audit/fixtures/eval/uploads.",
   "questions": [
     { "id": "A01", "group": "fato", "query": "Qual é a capital da Austrália?", "sources": ["web"] },
     { "id": "A02", "group": "fato", "query": "Em que ano foi lançado o primeiro iPhone e por qual preço?", "sources": ["web"] },
@@ -36,6 +36,13 @@
     { "id": "E28", "group": "arquivo", "query": "Quais são os três números mais importantes do relatório?", "sources": ["web"], "files": ["relatorio-ficticio.docx"] },
 
     { "id": "F29", "group": "conversa", "query": "E quantos anos ele tem?", "sources": ["web"], "history": [["human", "Quem é o atual presidente da França?"], ["assistant", "O atual presidente da França é Emmanuel Macron."]] },
-    { "id": "F30", "group": "conversa", "query": "Quanto é 15% de 2.340?", "sources": ["web"], "expectSkipSearch": true }
+    { "id": "F30", "group": "conversa", "query": "Quanto é 15% de 2.340?", "sources": ["web"], "expectSkipSearch": true },
+
+    { "id": "G31", "group": "auditoria", "query": "site:embrapa.br como fazer compostagem de folhas secas em apartamento?", "sources": ["web"] },
+    { "id": "G32", "group": "auditoria", "query": "Quais foram as principais notícias sobre a COP30 nesta semana?", "sources": ["web"] },
+    { "id": "G33", "group": "auditoria", "query": "Qual é a população exata do Brasil segundo o Censo 2022 do IBGE?", "sources": ["web"] },
+    { "id": "G34", "group": "auditoria", "query": "Is Python faster than Java?", "sources": ["web"] },
+    { "id": "G35", "group": "auditoria", "query": "O que diz a página https://www.planalto.gov.br/ccivil_03/leis/l9610.htm sobre obras em domínio público?", "sources": ["web"] },
+    { "id": "G36", "group": "auditoria", "query": "E qual delas consome menos memória?", "sources": ["web"], "history": [["human", "Compare Rust e Go para servidores web."], ["assistant", "Rust e Go são populares para servidores web. Go tem coletor de lixo e goroutines; Rust não tem coletor e usa ownership."]] }
   ]
 }
