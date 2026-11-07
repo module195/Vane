@@ -95,6 +95,21 @@ export const hasFilters = (f: SearchFilters) =>
   f.includeDomains.length > 0 ||
   f.excludeDomains.length > 0;
 
+const SITE_OPERATOR_RE = /(^|\s)(-?)site:(\S+)/gi;
+
+/**
+ * The `site:` / `-site:` operators the user typed, as `domains` entries
+ * ("wikipedia.org", "-pinterest.com"). Used where no LLM picks the filter
+ * (the speed fast path), so the operator is not lost when the classifier
+ * rewrites the question.
+ */
+export const siteOperatorDomains = (text: string): string[] =>
+  [...text.matchAll(SITE_OPERATOR_RE)].map((m) => `${m[2]}${m[3]}`);
+
+/** The query without its site: operators (applyDomainOperators adds them back). */
+export const stripSiteOperators = (query: string) =>
+  query.replace(SITE_OPERATOR_RE, ' ').replace(/\s+/g, ' ').trim();
+
 /**
  * Adds site: operators to a query. Engines that ignore them are covered by
  * `filterResultsByDomain`, which enforces the same rule on the results.

@@ -14,6 +14,10 @@ import {
   getContextWindow,
 } from '@/lib/context/budget';
 import { compactResearchHistory } from '@/lib/context/compact';
+import {
+  siteOperatorDomains,
+  stripSiteOperators,
+} from './actions/search/filters';
 import { MAX_FAST_PATH_QUERIES, getEffort } from '../effort';
 
 /**
@@ -189,6 +193,9 @@ class Researcher {
     );
 
     if (fastQueries) {
+      /* The classifier's rewrite can drop a site: the user typed, so read
+         it from the original message and pass it as the domains filter. */
+      const domains = siteOperatorDomains(input.followUp);
       trace({
         type: 'research_iteration',
         iteration: -1,
@@ -200,7 +207,12 @@ class Researcher {
             {
               id: 'fast-path-search',
               name: 'web_search',
-              arguments: { queries: fastQueries },
+              arguments: domains.length
+                ? {
+                    queries: fastQueries.map((q) => stripSiteOperators(q) || q),
+                    domains,
+                  }
+                : { queries: fastQueries },
             },
           ],
           actionConfig,

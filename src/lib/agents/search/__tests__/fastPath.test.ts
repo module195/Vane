@@ -144,6 +144,34 @@ describe('Researcher speed fast path', () => {
     ]);
   });
 
+  it('keeps a site: the user typed even when the classifier drops it', async () => {
+    searxngMock.mockResolvedValue({
+      results: [
+        {
+          title: 'W',
+          url: 'https://pt.wikipedia.org/wiki/14-bis',
+          content: '14-bis',
+        },
+        { title: 'B', url: 'https://www.britannica.com/x', content: '14-bis' },
+      ],
+      suggestions: [],
+    });
+    const i = input('speed', classification({}, ['história 14-bis']), {
+      followUp: 'site:wikipedia.org história do 14-bis',
+    });
+    i.config.llm = new FakeLLM({});
+
+    const out = await new Researcher().research(createFakeSession() as any, i);
+
+    expect(searxngMock).toHaveBeenCalledWith(
+      'história 14-bis site:wikipedia.org',
+      expect.anything(),
+    );
+    expect(out.searchFindings.map((c) => c.metadata.url)).toEqual([
+      'https://pt.wikipedia.org/wiki/14-bis',
+    ]);
+  });
+
   it('falls back to the researcher loop when the fast search finds nothing', async () => {
     searxngMock.mockResolvedValue({ results: [], suggestions: [] });
     const llm = new FakeLLM({ streamText: () => [call('c1', 'done', {})] });
@@ -188,5 +216,21 @@ describe('classifier searchQueries', () => {
       chatHistory: [],
     });
     expect(out.searchQueries).toEqual(['a', 'b']);
+  });
+});
+
+describe('site: operators', () => {
+  it('reads include and exclude operators from the message', async () => {
+    const { siteOperatorDomains, stripSiteOperators } =
+      await import('../researcher/actions/search/filters');
+    expect(
+      siteOperatorDomains(
+        'site:wikipedia.org santos dumont -site:pinterest.com',
+      ),
+    ).toEqual(['wikipedia.org', '-pinterest.com']);
+    expect(siteOperatorDomains('sem filtro')).toEqual([]);
+    expect(stripSiteOperators('site:wikipedia.org santos  dumont')).toBe(
+      'santos dumont',
+    );
   });
 });
