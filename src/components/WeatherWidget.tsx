@@ -19,28 +19,30 @@ const WeatherWidget = () => {
   });
 
   const [loading, setLoading] = useState(true);
+  /* No location or no forecast (an install without internet, say): the
+     card is hidden instead of staying on its skeleton or showing 0°. */
+  const [unavailable, setUnavailable] = useState(false);
 
-  const getLocation = async (
-    callback: (location: {
-      latitude: number;
-      longitude: number;
-      city: string;
-    }) => void,
-  ) => {
+  type Location = { latitude: number; longitude: number; city: string };
+
+  const getLocation = async (callback: (location: Location | null) => void) => {
     if (navigator.geolocation) {
       const result = await navigator.permissions.query({
         name: 'geolocation',
       });
 
       if (result.state === 'granted') {
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          callback(
-            await reverseGeocode(
-              position.coords.latitude,
-              position.coords.longitude,
-            ),
-          );
-        });
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            callback(
+              await reverseGeocode(
+                position.coords.latitude,
+                position.coords.longitude,
+              ).catch(() => null),
+            );
+          },
+          async () => callback(await getApproxLocation()),
+        );
       } else if (result.state === 'prompt') {
         callback(await getApproxLocation());
         navigator.geolocation.getCurrentPosition((position) => {});
@@ -54,45 +56,51 @@ const WeatherWidget = () => {
 
   /* Looked up once; the 30 s refresh reuses it instead of asking the
      geolocation services again. */
-  const locationRef = useRef<{
-    latitude: number;
-    longitude: number;
-    city: string;
-  } | null>(null);
+  const locationRef = useRef<Location | null>(null);
+  const shownRef = useRef(false);
 
-  const withLocation = (
-    callback: (location: {
-      latitude: number;
-      longitude: number;
-      city: string;
-    }) => void,
-  ) => {
+  const withLocation = (callback: (location: Location | null) => void) => {
     if (locationRef.current) return callback(locationRef.current);
     getLocation((location) => {
       locationRef.current = location;
       callback(location);
-    });
+    }).catch(() => callback(null));
   };
 
   const updateWeather = async () => {
     withLocation(async (location) => {
-      const res = await fetch(`/api/weather`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lat: location.latitude,
-          lng: location.longitude,
-          measureUnit: localStorage.getItem('measureUnit') ?? 'Metric',
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.status !== 200) {
-        console.error('Error fetching weather data');
+      if (!location) {
+        setUnavailable(true);
         setLoading(false);
         return;
       }
+
+      let res: Response;
+      let data: any;
+      try {
+        res = await fetch(`/api/weather`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: location.latitude,
+            lng: location.longitude,
+            measureUnit: localStorage.getItem('measureUnit') ?? 'Metric',
+          }),
+        });
+        data = await res.json();
+      } catch {
+        res = new Response(null, { status: 503 });
+      }
+
+      if (res.status !== 200) {
+        /* A failed refresh keeps the forecast already on screen. */
+        if (!shownRef.current) setUnavailable(true);
+        setLoading(false);
+        return;
+      }
+
+      shownRef.current = true;
+      setUnavailable(false);
 
       setData({
         temperature: data.temperature,
@@ -113,6 +121,8 @@ const WeatherWidget = () => {
     const intervalId = setInterval(updateWeather, 30 * 1000);
     return () => clearInterval(intervalId);
   }, []);
+
+  if (unavailable) return null;
 
   return (
     <div className="bg-light-secondary dark:bg-dark-secondary rounded-2xl border border-light-200 dark:border-dark-200 shadow-sm shadow-light-200/10 dark:shadow-black/25 flex flex-row items-center w-full h-24 min-h-[96px] max-h-[96px] px-3 py-2 gap-3">

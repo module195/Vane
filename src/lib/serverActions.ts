@@ -10,18 +10,31 @@ type ApproxLocation = { latitude: number; longitude: number; city: string };
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
-/** Approximate location from the server's public IP (freeipapi.com). */
-export const getApproxLocation = async (): Promise<ApproxLocation> => {
-  const res = await fetch('https://free.freeipapi.com/api/json', {
-    signal: AbortSignal.timeout(5000),
-  });
-  const data = await res.json();
+/** Approximate location from the server's public IP (freeipapi.com), or
+ *  null when the lookup fails (no internet, say): a server action that
+ *  throws reaches the page as an unhandled error. */
+export const getApproxLocation = async (): Promise<ApproxLocation | null> => {
+  try {
+    const res = await fetch('https://free.freeipapi.com/api/json', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
 
-  return {
-    latitude: Number(data.latitude),
-    longitude: Number(data.longitude),
-    city: String(data.cityName ?? ''),
-  };
+    const latitude = Number(data.latitude);
+    const longitude = Number(data.longitude);
+    if (
+      data.latitude == null ||
+      data.longitude == null ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude)
+    )
+      return null;
+
+    return { latitude, longitude, city: String(data.cityName ?? '') };
+  } catch {
+    return null;
+  }
 };
 
 /** City name for a position, sent to BigDataCloud with rounded coordinates. */
