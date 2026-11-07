@@ -652,6 +652,30 @@ export const analyze = (
     });
   }
 
+  /* All-zero (or constant) vectors give every result the same similarity:
+     the filter and the ranking then have no signal. Only queries with two
+     or more results can tell. */
+  const scored = results.flatMap((r) =>
+    (r.events ?? []).flatMap((e) =>
+      e.type === 'search_query' &&
+      e.results >= 2 &&
+      e.simMin !== undefined &&
+      e.simMax !== undefined
+        ? [{ id: r.id, flat: e.simMin === e.simMax }]
+        : [],
+    ),
+  );
+  if (scored.length && scored.every((s) => s.flat)) {
+    const flatFinding: Finding = {
+      severity: 'bug',
+      title: 'Os embeddings não distinguem os resultados',
+      detail: `Em todas as ${scored.length} consultas, todos os resultados tiveram a mesma similaridade com a pergunta. O modelo de embedding devolve vetores constantes (no LM Studio, vetores zerados quando o modelo não está carregado como embedding), e o filtro e a ordem das fontes ficam sem sinal. Confira o modelo de embedding nas configurações.`,
+      cases: [...new Set(scored.map((s) => s.id))],
+    };
+    findings.push(flatFinding);
+    merged.set('flat-embeddings', flatFinding);
+  }
+
   if (ok.length && !findings.some((f) => f.severity === 'bug'))
     merged.set('ok', {
       severity: 'sugestao',

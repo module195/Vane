@@ -9,6 +9,11 @@
    --record   go to the real SearxNG (EVAL_SEARXNG_UPSTREAM) and real pages,
               and save what comes back. Without it, only recorded data is used.
    Output: perf-audit/eval/runs/<label>/<id>.<mode>.json and summary.json.
+   Each task records time to first token, tokens (input, output, reasoning,
+   when the server reports them), calls per stage and stream bytes; set
+   EVAL_PRICE_INPUT_PER_M / EVAL_PRICE_OUTPUT_PER_M (USD) to get a cost.
+   summary.json carries a configHash: runs with different hashes used
+   different models or scraper and are not comparable.
 
    The agent is APISearchAgent, the same pipeline /api/search uses
    (classifier, widgets, researcher, writer). Nothing in src/ is changed:
@@ -99,6 +104,12 @@ const main = async () => {
   const { default: SessionManager } = await import('@/lib/session');
   const { default: APISearchAgent } = await import('@/lib/agents/search/api');
   const { createModels, readModelEnv } = await import('./lib/models');
+  const { InstrumentedLLM, newRecorder } =
+    await import('@/lib/benchmark/instrument');
+  const { runTraced } = await import('@/lib/trace');
+  const { configHash, costOf, modeSummary, readPrice, taskMetrics } =
+    await import('./lib/metrics');
+  const price = readPrice();
 
   const modelEnv = readModelEnv();
   const { llm, embedding } = createModels(modelEnv);
@@ -130,6 +141,11 @@ const main = async () => {
       const statsBefore = llm.stats.length;
       const started = performance.now();
       let firstTokenMs: number | null = null;
+      let streamBytes = 0;
+      /* Times every call and collects the token counts the server reports
+         (only sizes and counts; no prompt or answer text). */
+      const rec = newRecorder();
+      const taskLLM = new InstrumentedLLM(llm, rec);
 
       const session = SessionManager.createSession();
       const result = await new Promise<{
@@ -140,6 +156,8 @@ const main = async () => {
         let message = '';
         let sources: any[] = [];
         session.subscribe((event: string, data: any) => {
+          if (event === 'data')
+            streamBytes += Buffer.byteLength(JSON.stringify(data));
           if (event === 'data' && data.type === 'response') {
             if (firstTokenMs === null)
               firstTokenMs = performance.now() - started;
@@ -155,23 +173,25 @@ const main = async () => {
 
         try {
           const ids = await Promise.all((q.files ?? []).map(fileIdFor));
-          await new APISearchAgent().searchAsync(session, {
-            chatHistory: (q.history ?? []).map(([role, content]) => ({
-              role: role === 'human' ? 'user' : 'assistant',
-              content,
-            })),
-            followUp: q.query,
-            config: {
-              llm,
-              embedding,
-              sources: q.sources,
-              mode,
-              fileIds: ids,
-              systemInstructions: '',
-            },
-            chatId: crypto.randomUUID(),
-            messageId: crypto.randomUUID(),
-          });
+          const run = () =>
+            new APISearchAgent().searchAsync(session, {
+              chatHistory: (q.history ?? []).map(([role, content]) => ({
+                role: role === 'human' ? 'user' : 'assistant',
+                content,
+              })),
+              followUp: q.query,
+              config: {
+                llm: taskLLM,
+                embedding,
+                sources: q.sources,
+                mode,
+                fileIds: ids,
+                systemInstructions: '',
+              },
+              chatId: crypto.randomUUID(),
+              messageId: crypto.randomUUID(),
+            });
+          await runTraced((e) => rec.events.push(e), run);
         } catch (err: any) {
           resolve({
             message: '',
@@ -182,6 +202,7 @@ const main = async () => {
       });
 
       const calls = llm.stats.slice(statsBefore);
+      const metrics = taskMetrics(rec.llm, streamBytes);
       const record = {
         id: q.id,
         group: q.group,
@@ -205,7 +226,11 @@ const main = async () => {
             acc[c.kind] = (acc[c.kind] ?? 0) + 1;
             return acc;
           }, {}),
+          byStage: metrics.byStage,
         },
+        tokens: metrics.tokens,
+        costUSD: costOf(metrics.tokens, price),
+        streamBytes: metrics.streamBytes,
         replayMisses: {
           searxng: searxng.misses.slice(missesBefore),
           pages: scraper.misses.slice(pageMissesBefore),
@@ -221,19 +246,30 @@ const main = async () => {
         mode,
         ok: !result.error,
         totalMs: record.timing.totalMs,
+        firstTokenMs: record.timing.firstTokenMs,
+        tokens: metrics.tokens,
+        costUSD: record.costUSD,
         llmCalls: record.llmCalls.count,
         sources: record.sources.length,
         searxngMisses: record.replayMisses.searxng.length,
         pageMisses: record.replayMisses.pages.length,
       });
       console.log(
-        `${q.id} ${mode.padEnd(8)} ${record.timing.totalMs}ms calls=${record.llmCalls.count} sources=${record.sources.length}` +
+        `${q.id} ${mode.padEnd(8)} ${record.timing.totalMs}ms ttft=${record.timing.firstTokenMs ?? '-'}ms tokens=${metrics.tokens.prompt}/${metrics.tokens.completion}/${metrics.tokens.reasoning} calls=${record.llmCalls.count} sources=${record.sources.length}` +
           (result.error ? ' ERRO' : ''),
       );
     }
   }
 
   const totalSearches = searxng.hits.length + searxng.misses.length;
+  const model = {
+    endpoint: modelEnv.baseURL,
+    chat: modelEnv.chatModel,
+    embedding: `${modelEnv.embeddingProvider}:${modelEnv.embeddingModel}`,
+  };
+  const scraperKind = process.env.FIRECRAWL_API_URL
+    ? 'firecrawl'
+    : 'readability';
   fs.writeFileSync(
     path.join(outDir, 'summary.json'),
     JSON.stringify(
@@ -241,12 +277,15 @@ const main = async () => {
         label: opts.label,
         recordedAt: new Date().toISOString(),
         record: opts.record,
-        model: {
-          endpoint: modelEnv.baseURL,
-          chat: modelEnv.chatModel,
-          embedding: `${modelEnv.embeddingProvider}:${modelEnv.embeddingModel}`,
-        },
-        scraper: process.env.FIRECRAWL_API_URL ? 'firecrawl' : 'readability',
+        model,
+        scraper: scraperKind,
+        configHash: configHash({
+          model,
+          scraper: scraperKind,
+          record: opts.record,
+        }),
+        price: price ?? null,
+        byMode: modeSummary(summary),
         searxngMissRate: totalSearches
           ? searxng.misses.length / totalSearches
           : 0,

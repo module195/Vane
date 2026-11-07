@@ -44,6 +44,16 @@ npx tsx perf-audit/eval/judge.ts --run referencia-2 --ref referencia-1
 npx tsx perf-audit/eval/compare.ts --run referencia-2 --ref referencia-1
 ```
 
+### Latência, tokens e custo
+
+Cada `runs/<rótulo>/<id>.<modo>.json` grava o tempo até o 1º token, os tokens de entrada, saída e raciocínio que o servidor informou (`tokens.callsWithUsage` diz em quantas chamadas ele informou), as chamadas e o tempo por etapa (`llmCalls.byStage`: classificador, pesquisador, redator...) e os bytes do stream. Nada do texto do prompt ou da resposta entra nessas medidas. Para ter custo, defina o preço em dólares por milhão de tokens (raciocínio conta como saída):
+
+```bash
+export EVAL_PRICE_INPUT_PER_M=0.20 EVAL_PRICE_OUTPUT_PER_M=0.60
+```
+
+O `summary.json` traz as médias por modo (`byMode`, só das tarefas que terminaram, com as falhas contadas à parte) e um `configHash` do modelo, do embedding e do leitor de páginas. O `compare.ts` mostra a tabela de latência e tokens entre as duas rodadas e avisa quando os `configHash` diferem, porque aí os números não são comparáveis. Essas medidas não entram na regra de aprovação, que continua sendo só a de qualidade.
+
 Para avaliar uma mudança: aplicar a mudança, rodar `run.ts --label <nome>`, depois `checks.ts --run <nome> --ref referencia-1`, `judge.ts --run <nome> --ref referencia-1` e `compare.ts --run <nome> --ref referencia-1`.
 
 ### Outros provedores de modelo
