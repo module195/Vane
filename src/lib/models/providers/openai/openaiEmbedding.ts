@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import BaseEmbedding from '../../base/embedding';
 import { Chunk } from '@/lib/types';
+import { llmTimeoutMs } from '../../utils/timeout';
 
 type OpenAIConfig = {
   apiKey: string;
@@ -19,6 +20,7 @@ class OpenAIEmbedding extends BaseEmbedding<OpenAIConfig> {
       apiKey: config.apiKey,
       baseURL: config.baseURL,
       defaultHeaders: config.defaultHeaders,
+      timeout: llmTimeoutMs(),
     });
   }
 
