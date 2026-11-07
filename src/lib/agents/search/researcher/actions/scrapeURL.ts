@@ -3,8 +3,7 @@ import { ResearchAction } from '../../types';
 import { Chunk, ReadingResearchBlock } from '@/lib/types';
 import Scraper from '@/lib/scraper';
 import { splitText } from '@/lib/utils/splitText';
-import { createLimiter } from '@/lib/utils/limit';
-import { EXTRACTOR_CONCURRENCY, MAX_PAGE_CHARS } from './search/baseSearch';
+import { MAX_PAGE_CHARS, withExtractorSlot } from './search/baseSearch';
 
 const extractorPrompt = `
                   Assistant is an AI information extractor. Assistant will be shared with scraped information from a website along with the queries used to retrieve that information. Assistant's task is to extract relevant facts from the scraped data to answer the queries.
@@ -106,7 +105,6 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
     );
 
     const results: Chunk[] = [];
-    const withExtractorSlot = createLimiter(EXTRACTOR_CONCURRENCY);
 
     await Promise.all(
       params.urls.map(async (url) => {

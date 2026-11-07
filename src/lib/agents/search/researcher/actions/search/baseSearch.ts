@@ -10,6 +10,7 @@ import z from 'zod';
 import Scraper from '@/lib/scraper';
 import { splitText } from '@/lib/utils/splitText';
 import { createLimiter } from '@/lib/utils/limit';
+import { llmTimeoutMs } from '@/lib/models/utils/timeout';
 import { normalizeUrl } from '@/lib/utils/normalizeUrl';
 import {
   SearchFilters,
@@ -91,11 +92,20 @@ export const pageReading = {
 };
 
 /**
- * Extractor LLM calls in flight at once for one quality search. Every
- * chunk of every picked page used to go out at the same time (60+ calls
- * for three long pages), which a local LM Studio/Ollama can only queue.
+ * Extractor LLM calls in flight at once, across every quality search and
+ * scrape_url read in the process. Every chunk of every picked page used to
+ * go out at the same time (60+ calls for three long pages), which a local
+ * LM Studio/Ollama can only queue; and with one limiter per call, parallel
+ * searches in the same iteration still added up (3 searches + a page read
+ * = 12 in flight).
  */
 export const EXTRACTOR_CONCURRENCY = 3;
+/** Shared by the quality search and scrape_url. A call still pending after
+ *  LLM_TIMEOUT_MS frees its slot (and fails), so one hung request cannot
+ *  block every later extraction. */
+export const withExtractorSlot = createLimiter(EXTRACTOR_CONCURRENCY, {
+  timeoutMs: llmTimeoutMs(),
+});
 /**
  * Page text kept before chunking (~25k tokens, ~7 chunks of 4000 tokens).
  * The relevant part of a page is nearly always near the top; the rest of
@@ -675,8 +685,6 @@ const runSearch = async (input: SearchInput): Promise<Chunk[]> => {
           'The extracted facts that are relevant to the query and can help in answering the question should be listed here in a concise manner.',
         ),
     });
-
-    const withExtractorSlot = createLimiter(EXTRACTOR_CONCURRENCY);
 
     await Promise.all(
       filteredResults.map(async (result, i) => {
